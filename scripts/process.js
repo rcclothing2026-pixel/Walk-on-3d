@@ -19,7 +19,8 @@
  *   npm run process -- --force              rebuild even if outputs are current
  *   npm run process -- --concurrency=4      default 2 (these are large decodes)
  *   npm run process -- --no-mozjpeg         plain libjpeg instead of mozjpeg
- *   npm run process -- --raw=raw --out=panos
+ *   npm run process -- --tour=hammam         pick a tour when several exist
+ *   npm run process -- --raw=DIR --out=DIR   override the tour's own paths
  */
 
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
@@ -34,18 +35,11 @@ import {
   nodeId,
   panoFilename,
 } from '../src/lib/paths.js';
-import { nodeNumbers, nodeRange } from '../src/lib/nodes.js';
+import { resolveTour } from './tours.js';
+import { loadRoster } from './roster.js';
 import { findRaw, hasRawFiles } from './raw.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-
-/**
- * Which nodes exist comes from src/data/names.json, not a constant here — the
- * shooting plan and the brief's node table currently disagree on the count, so
- * renumbering must stay a one-file change.
- */
-const ALL_NODES = nodeNumbers();
-const { first: FIRST_NODE, last: LAST_NODE } = nodeRange();
 
 /** Source panoramas must be equirectangular, i.e. exactly 2:1. */
 const EXPECTED_ASPECT = 2;
@@ -61,16 +55,20 @@ main().catch((err) => {
 });
 
 async function main() {
-  const opts = parseArgs(process.argv.slice(2));
-  const rawDir = path.resolve(ROOT, opts.raw);
-  const outDir = path.resolve(ROOT, opts.out);
+  const argv = process.argv.slice(2);
+  const tour = await resolveTour(argv);
+  const roster = await loadRoster(tour);
+
+  const opts = parseArgs(argv, roster);
+  const rawDir = opts.raw ? path.resolve(ROOT, opts.raw) : tour.raw;
+  const outDir = opts.out ? path.resolve(ROOT, opts.out) : tour.panos;
 
   await assertRawDir(rawDir);
   await mkdir(outDir, { recursive: true });
 
-  const nodes = opts.only ?? ALL_NODES;
+  const nodes = opts.only ?? roster.numbers;
 
-  console.log(`\n${bold('Panorama pipeline')}`);
+  console.log(`\n${bold('Panorama pipeline')}  ${dim(tour.slug)}`);
   console.log(`  in   ${path.relative(ROOT, rawDir)}/`);
   console.log(`  out  ${path.relative(ROOT, outDir)}/`);
   console.log(
@@ -78,13 +76,14 @@ async function main() {
       `${opts.mozjpeg ? ', mozjpeg' : ''}${opts.force ? ', forced rebuild' : ''}\n`,
   );
 
+  const sources = (await readJsonFile(tour.file('sources')))?.sources ?? {};
   const results = [];
   const missing = [];
   const warnings = [];
 
   await mapWithConcurrency(nodes, opts.concurrency, async (node) => {
     // Accepts 07.jpg, 7.jpg, 7.JPEG and so on — the number is what matters.
-    const source = await findRaw(rawDir, node);
+    const source = await findRaw(rawDir, node, sources);
     const sourceStat = source ? await statOrNull(source) : null;
 
     if (!sourceStat) {
@@ -357,10 +356,10 @@ function printMissing(missing, requested) {
  * Plumbing
  * ------------------------------------------------------------------ */
 
-function parseArgs(argv) {
+function parseArgs(argv, roster) {
   const opts = {
-    raw: 'raw',
-    out: 'panos',
+    raw: null,
+    out: null,
     concurrency: 2,
     force: false,
     mozjpeg: true,
@@ -387,8 +386,10 @@ function parseArgs(argv) {
         opts.mozjpeg = false;
         break;
       case '--only':
-        opts.only = parseNodeList(requireValue(flag, value));
+        opts.only = parseNodeList(requireValue(flag, value), roster);
         break;
+      case '--tour':
+        break; // consumed by resolveTour
       default:
         throw new Error(`Unknown option "${arg}". See the header of scripts/process.js.`);
     }
@@ -408,7 +409,7 @@ function requireValue(flag, value) {
 }
 
 /** '1,5,17-20' → [1, 5, 17, 18, 19, 20] */
-function parseNodeList(spec) {
+function parseNodeList(spec, roster) {
   const out = new Set();
 
   for (const part of spec.split(',')) {
@@ -423,18 +424,18 @@ function parseNodeList(spec) {
     if (!Number.isInteger(from) || !Number.isInteger(to)) {
       throw new Error(`--only: cannot parse "${trimmed}"`);
     }
-    if (from < FIRST_NODE || to > LAST_NODE || from > to) {
-      throw new Error(`--only: "${trimmed}" is outside ${FIRST_NODE}–${LAST_NODE}`);
+    if (from < roster.first || to > roster.last || from > to) {
+      throw new Error(`--only: "${trimmed}" is outside ${roster.first}–${roster.last}`);
     }
 
     for (let n = from; n <= to; n++) out.add(n);
   }
 
   // A range like 20-30 may span gaps if the roster is ever non-contiguous.
-  const known = new Set(ALL_NODES);
+  const known = new Set(roster.numbers);
   const selected = [...out].filter((n) => known.has(n)).sort((a, b) => a - b);
 
-  if (!selected.length) throw new Error('--only matched no nodes in src/data/names.json');
+  if (!selected.length) throw new Error('--only matched no nodes in this tour');
   return selected;
 }
 
@@ -448,9 +449,17 @@ async function assertRawDir(rawDir) {
     throw new Error(
       `${rawDir} contains no numbered photos.\n` +
         `  Export from Insta360 Studio as "Export 360 Photo (not reframed)" and\n` +
-        `  number them 1 … ${LAST_NODE} in route order. Zero-padding is optional:\n` +
+        `  number them in route order. Zero-padding is optional:\n` +
         `  7.jpg and 07.jpg are both read as node 7.`,
     );
+  }
+}
+
+async function readJsonFile(file) {
+  try {
+    return JSON.parse(await readFile(file, 'utf8'));
+  } catch {
+    return null;
   }
 }
 

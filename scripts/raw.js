@@ -14,34 +14,22 @@
  * browser bundle.
  */
 
-import { readFile, readdir, stat } from 'node:fs/promises';
+import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 const EXTENSIONS = ['jpg', 'jpeg', 'JPG', 'JPEG'];
-
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const SOURCES_JSON = path.join(ROOT, 'src/data/sources.json');
 
 /**
  * Explicit node → filename assignments, made in the studio.
  *
- * The photographs do not necessarily arrive numbered in tour order — the count
- * alone (42 photos against 43 nodes against 44 shooting points) says the two
- * sequences disagree somewhere. Rather than guessing an offset, this records
- * which file belongs to which node, decided by looking at the pictures.
+ * Photographs do not necessarily arrive numbered in tour order — for the first
+ * venue there were 42 files against 43 nodes against 44 shooting points, and no
+ * single offset reconciled them. Rather than guessing, the assignment is
+ * recorded by looking at the pictures.
  *
- * A node with no entry falls back to matching on the number in the filename,
- * so an untouched project still works.
+ * A node with no entry falls back to matching the number in the filename, so an
+ * untouched tour still works.
  */
-export async function loadSources() {
-  try {
-    const parsed = JSON.parse(await readFile(SOURCES_JSON, 'utf8'));
-    return parsed?.sources ?? {};
-  } catch {
-    return {};
-  }
-}
 
 /** Candidate filenames for a node, most conventional first. */
 export function rawCandidates(node) {
@@ -63,8 +51,8 @@ export function rawCandidates(node) {
  * @param {number} node
  * @returns {Promise<string|null>} absolute path
  */
-export async function findRaw(rawDir, node, sources = null) {
-  const assigned = (sources ?? (await loadSources()))[String(node).padStart(2, '0')];
+export async function findRaw(rawDir, node, sources = {}) {
+  const assigned = sources[String(node).padStart(2, '0')];
 
   // An explicit assignment wins outright. If it names a file that has since
   // been moved or renamed, that is a mistake worth surfacing rather than

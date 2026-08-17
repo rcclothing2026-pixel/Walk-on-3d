@@ -25,14 +25,13 @@
 import { Viewer } from '@photo-sphere-viewer/core';
 import '@photo-sphere-viewer/core/index.css';
 
-import { panoUrl } from '../src/lib/paths.js';
-import { nodeInfo, nodeNumbers } from '../src/lib/nodes.js';
-import { downloadJson, saveData } from './save.js';
+import { panoUrl, dataUrl } from '../src/lib/paths.js';
+import { loadTourData } from '../src/lib/tour-data.js';
+import { downloadJson, saveData, tourLink } from './save.js';
 
-const NODES = nodeNumbers();
-/* Resolved against this module's own URL, not the site root. The dev server
- * serves the tour under /tour/, so a root-absolute path silently 404s. */
-const ALIGNMENT_PATH = new URL('../src/data/alignment.json', import.meta.url);
+/** Filled once the tour's roster has loaded. */
+let NODES = [];
+let tourData = null;
 
 /** Which rendition to align against. `mid` shows enough detail to pick a
  *  landmark without pulling 8192px files for all 43 nodes. */
@@ -64,7 +63,7 @@ const el = {
 /** node number → pan in degrees. Committed values only. */
 const saved = new Map();
 
-let current = initialNode();
+let current = 1;
 let pan = 0;
 let dirty = false;
 let viewer = null;
@@ -72,6 +71,10 @@ let viewer = null;
 start();
 
 async function start() {
+  tourData = await loadTourData();
+  NODES = tourData.numbers();
+  current = initialNode();
+
   buildCompassRing();
   buildNodeOptions();
   await loadExistingAlignment();
@@ -231,13 +234,13 @@ function polar(angleDeg, radius) {
 
 function buildNodeOptions() {
   el.node.innerHTML = NODES.map((n) => {
-    const { name } = nodeInfo(n);
+    const { name } = tourData.info(n);
     return `<option value="${n}">${pad(n)} — ${escapeHtml(name)}</option>`;
   }).join('');
 }
 
 function syncNodeChrome() {
-  const { name, type, unconfirmed } = nodeInfo(current);
+  const { name, type, unconfirmed } = tourData.info(current);
 
   el.node.value = String(current);
   el.name.textContent = name;
@@ -449,7 +452,7 @@ async function persist() {
 /** Picks up a previous session's work so alignment can be done across sittings. */
 async function loadExistingAlignment() {
   try {
-    const response = await fetch(ALIGNMENT_PATH);
+    const response = await fetch(dataUrl('alignment'));
     if (!response.ok) return;
 
     const data = await response.json();

@@ -24,13 +24,13 @@
 import { execFile } from 'node:child_process';
 import { mkdir, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import process from 'node:process';
 import { promisify } from 'node:util';
 import sharp from 'sharp';
 
+import { ROOT, resolveTour } from './tours.js';
+
 const execFileAsync = promisify(execFile);
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 /** Greyscale value below which a pixel counts as ink. */
 const INK_THRESHOLD = 200;
@@ -47,9 +47,12 @@ main().catch((err) => {
 });
 
 async function main() {
-  const opts = parseArgs(process.argv.slice(2));
-  const pdf = path.resolve(ROOT, opts.pdf);
-  const out = path.resolve(ROOT, opts.out);
+  const argv = process.argv.slice(2);
+  const tour = await resolveTour(argv);
+  const opts = parseArgs(argv);
+
+  const pdf = path.resolve(tour.dir, opts.pdf ?? tour.config.blueprint ?? 'blueprint.pdf');
+  const out = opts.out ? path.resolve(ROOT, opts.out) : tour.floorplan;
 
   await assertFile(pdf, 'source PDF');
   await assertPdftoppm();
@@ -208,8 +211,8 @@ function tally(length, fn) {
 
 function parseArgs(argv) {
   const opts = {
-    pdf: 'docs/blueprint-basement-r3.pdf',
-    out: 'public/floorplan.png',
+    pdf: null,
+    out: null,
     dpi: 400,
     width: 2000,
     keepRender: false,
@@ -234,6 +237,7 @@ function parseArgs(argv) {
         opts.keepRender = true;
         break;
       default:
+        if (flag === '--tour') break; // consumed by resolveTour
         throw new Error(`Unknown option "${arg}". See the header of scripts/floorplan.js.`);
     }
   }

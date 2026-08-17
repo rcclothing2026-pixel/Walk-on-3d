@@ -15,14 +15,12 @@
  * nodes.json over src/data/nodes.json.
  */
 
-import { floorplanUrl } from '../src/lib/paths.js';
-import { nodeInfo, nodeNumbers } from '../src/lib/nodes.js';
-import { downloadJson, saveData } from './save.js';
+import { floorplanUrl, dataUrl } from '../src/lib/paths.js';
+import { loadTourData } from '../src/lib/tour-data.js';
+import { downloadJson, saveData, tourLink } from './save.js';
 
-const NODES = nodeNumbers();
-/* Resolved against this module's own URL, not the site root. The dev server
- * serves the tour under /tour/, so a root-absolute path silently 404s. */
-const NODES_PATH = new URL('../src/data/nodes.json', import.meta.url);
+let NODES = [];
+let tourData = null;
 
 const el = {
   stage: document.getElementById('stage'),
@@ -49,12 +47,16 @@ const el = {
 };
 
 let tour = null;
-let current = NODES[0];
+let current = 1;
 let scale = 1;
 
 start();
 
 async function start() {
+  tourData = await loadTourData();
+  NODES = tourData.numbers();
+  current = NODES[0] ?? 1;
+
   tour = await loadTour();
   if (!tour) return;
 
@@ -71,7 +73,7 @@ async function start() {
 
 async function loadTour() {
   try {
-    const response = await fetch(NODES_PATH);
+    const response = await fetch(dataUrl('nodes'));
     if (!response.ok) throw new Error(String(response.status));
     return await response.json();
   } catch {
@@ -185,7 +187,7 @@ function renderOverlay() {
 
 function renderList() {
   el.list.innerHTML = NODES.map((n) => {
-    const { name } = nodeInfo(n);
+    const { name } = tourData.info(n);
     const point = tour.nodes[pad(n)]?.map;
     const placed = isPlaced(n);
 
@@ -210,7 +212,7 @@ function renderList() {
 }
 
 function syncChrome() {
-  const { name, type } = nodeInfo(current);
+  const { name, type } = tourData.info(current);
   const point = tour.nodes[pad(current)]?.map;
   const placed = NODES.filter(isPlaced).length;
 
@@ -404,7 +406,7 @@ function nodeData() {
 
 function buildNodeOptions() {
   el.node.innerHTML = NODES.map((n) => {
-    const { name } = nodeInfo(n);
+    const { name } = tourData.info(n);
     return `<option value="${n}">${pad(n)} — ${escapeHtml(name)}</option>`;
   }).join('');
 }

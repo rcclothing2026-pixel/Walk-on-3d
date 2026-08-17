@@ -23,23 +23,16 @@
  *   npm run nodes -- --check      validate only, write nothing
  */
 
-import { readFile, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import process from 'node:process';
 
-import { adjacency, validate } from '../src/data/graph.js';
-import { nodeInfo, nodeNumbers } from '../src/lib/nodes.js';
-
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const NODES_JSON = path.join(ROOT, 'src/data/nodes.json');
-const ALIGNMENT_JSON = path.join(ROOT, 'src/data/alignment.json');
+import { adjacency, validate } from './graph.js';
+import { ROOT, listTours, readJson, resolveTour, tourPaths } from './tours.js';
+import { loadRoster } from './roster.js';
 
 /** Where auto-placed floor arrows sit, in degrees. Mid-range of the brief's -15..-30. */
 const AUTO_PITCH = -20;
-
-/** The node the tour opens at. */
-const START_NODE = 1;
 
 main().catch((err) => {
   console.error(`\n${red('Build failed:')} ${err.stack || err.message}`);
@@ -47,27 +40,45 @@ main().catch((err) => {
 });
 
 async function main() {
-  const opts = parseArgs(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  const opts = parseArgs(argv);
+  const named = argv.some((arg) => arg.startsWith('--tour='));
 
-  const roster = nodeNumbers();
-  const alignment = await readJson(ALIGNMENT_JSON);
-  const previous = opts.reset ? null : await readJson(NODES_JSON);
+  // Checking every tour is harmless and is what a build wants; writing to one
+  // picked for you is not, so generating still demands an explicit choice.
+  if (opts.check && !named) {
+    const slugs = await listTours();
+    for (const slug of slugs) await run(await tourPaths(slug), opts);
+    return;
+  }
+
+  await run(await resolveTour(argv), opts);
+}
+
+async function run(tour, opts) {
+
+  const rosterData = await loadRoster(tour);
+  const roster = rosterData.numbers;
+  const links = (await readJson(tour.file('links'))) ?? { edges: [] };
+  const alignment = await readJson(tour.file('alignment'));
+  const previous = opts.reset ? null : await readJson(tour.file('nodes'));
+  const START_NODE = Number(tour.config.startNode) || roster[0] || 1;
 
   // --check audits what is actually on disk, which is the only thing a hand
   // edit or a bad picker export can corrupt. Without it, the build would only
   // ever validate its own freshly-generated output.
   if (opts.check) {
-    return checkOnDisk(previous, roster);
+    return checkOnDisk(previous, roster, { start: START_NODE, links, slug: tour.slug });
   }
 
-  const adj = adjacency(roster);
+  const adj = adjacency(links.edges, roster);
   const nodes = {};
   let picked = 0;
   let auto = 0;
 
   for (const n of roster) {
     const id = pad(n);
-    const { name, type, unconfirmed } = nodeInfo(n);
+    const { name, type, unconfirmed } = rosterData.info(n);
     const neighbours = adj.get(n) ?? [];
     const previousLinks = indexLinks(previous?.nodes?.[id]?.links);
 
@@ -108,7 +119,11 @@ async function main() {
   // Validate what is about to be written, not the graph it came from — this is
   // the structure the viewer will actually walk.
   const emitted = adjacencyOf(nodes);
-  const { errors, warnings } = validate(emitted, roster, START_NODE);
+  const { errors, warnings } = validate(emitted, roster, {
+    start: START_NODE,
+    deadEnds: links.deadEnds,
+    expectedSingleLink: links.expectedSingleLink,
+  });
 
   report({ roster, adj: emitted, errors, warnings, picked, auto, alignment });
 
@@ -119,8 +134,8 @@ async function main() {
   }
 
   const payload = { start: pad(START_NODE), autoPitch: AUTO_PITCH, nodes };
-  await writeFile(NODES_JSON, `${JSON.stringify(payload, null, 2)}\n`);
-  console.log(`${green('✓')} ${path.relative(ROOT, NODES_JSON)}\n`);
+  await writeFile(tour.file('nodes'), `${JSON.stringify(payload, null, 2)}\n`);
+  console.log(`${green('✓')} ${path.relative(ROOT, tour.file('nodes'))}\n`);
 }
 
 /** Derives the adjacency a nodes map actually describes, via its links. */
@@ -140,24 +155,28 @@ function adjacencyOf(nodes) {
 }
 
 /** Audits an existing nodes.json rather than generating a new one. */
-function checkOnDisk(nodes, roster) {
+function checkOnDisk(nodes, roster, { start, links, slug }) {
   if (!nodes?.nodes) {
-    console.error(red('\nNo src/data/nodes.json to check — run `npm run nodes` first.\n'));
+    console.error(red(`\nTour "${slug}" has no nodes.json — run \`npm run nodes -- --tour=${slug}\` first.\n`));
     process.exitCode = 1;
     return;
   }
 
   const adj = adjacencyOf(nodes.nodes);
-  const { errors, warnings } = validate(adj, roster, START_NODE);
-  const links = Object.values(nodes.nodes).flatMap((n) => n.links ?? []);
+  const { errors, warnings } = validate(adj, roster, {
+    start,
+    deadEnds: links.deadEnds,
+    expectedSingleLink: links.expectedSingleLink,
+  });
+  const allLinks = Object.values(nodes.nodes).flatMap((n) => n.links ?? []);
 
   report({
     roster,
     adj,
     errors,
     warnings,
-    picked: links.filter((l) => !l.auto).length,
-    auto: links.filter((l) => l.auto).length,
+    picked: allLinks.filter((l) => !l.auto).length,
+    auto: allLinks.filter((l) => l.auto).length,
     alignment: Object.fromEntries(
       Object.entries(nodes.nodes).map(([id, n]) => [id, { pan: n.pan, todo: n.pan === 0 }]),
     ),
@@ -249,19 +268,12 @@ function parseArgs(argv) {
         opts.check = true;
         break;
       default:
+        if (arg.startsWith('--tour=')) break; // consumed by resolveTour
         throw new Error(`Unknown option "${arg}". See the header of scripts/build-nodes.js.`);
     }
   }
 
   return opts;
-}
-
-async function readJson(file) {
-  try {
-    return JSON.parse(await readFile(file, 'utf8'));
-  } catch {
-    return null;
-  }
 }
 
 function round(value) {

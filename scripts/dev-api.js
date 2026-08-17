@@ -1,51 +1,39 @@
 /**
- * The local studio's back end.
+ * The studio's back end.
  *
  * A small API mounted on the Vite dev server so the tools can save straight to
- * src/data/ instead of making you download a file and move it over the old one
- * — which, across 43 nodes × three tools, is the single most tedious part of
- * building the tour.
+ * a tour's folder instead of making you download a file and move it over the
+ * old one — which, across dozens of nodes and several tools, is the single most
+ * tedious part of building a tour.
+ *
+ * Every endpoint is scoped to one tour via ?tour=<slug>. Nothing is global: two
+ * venues in the same install cannot see or overwrite each other's data.
  *
  * DEVELOPMENT ONLY. The plugin declares `apply: 'serve'`, so none of this is
- * ever part of `npm run build` or reaches the deployed bundle. It writes to
- * disk and spawns the image pipeline, so it must stay that way.
+ * ever part of `npm run build` or reaches a deployed bundle. It writes to disk
+ * and spawns the image pipeline, so it must stay that way.
  *
- * Everything it will touch is fixed up front:
+ * Everything it can touch is fixed up front:
  *
- *   - writes go only to the three whitelisted files in src/data/
- *   - the only spawn is `node scripts/process.js --only=N`, with N validated
- *     against the node roster, never interpolated into a shell
- *
- * Endpoints (all under /tour/api/):
- *
- *   GET  state             per-node status: photo, alignment, arrows, map point
- *   POST save/:file        write alignment | nodes | brands
- *   POST process           re-run the pipeline for one node
+ *   - writes go only to the known files inside tours/<slug>/
+ *   - slugs are validated against a strict pattern, so none can climb out of
+ *     tours/
+ *   - the only spawn is the pipeline, with a node number checked against the
+ *     roster and passed as an argv element, never through a shell
  */
 
 import { execFile } from 'node:child_process';
 import { createReadStream } from 'node:fs';
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { RENDITION_ORDER, nodeId, panoFilename } from '../src/lib/paths.js';
-import { findRaw, listRaw, loadSources } from './raw.js';
+import { ROOT, TOURS_DIR, assertSlug, listTours, readJson, tourPaths } from './tours.js';
+import { loadRoster } from './roster.js';
+import { findRaw, listRaw } from './raw.js';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const DATA = path.join(ROOT, 'src/data');
-const RAW = path.join(ROOT, 'raw');
-const PANOS = path.join(ROOT, 'panos');
-const PREVIEWS = path.join(PANOS, '.previews');
-const NAMES_JSON = path.join(DATA, 'names.json');
-const SOURCES_JSON = path.join(DATA, 'sources.json');
-
-/** The only files the API will ever write. */
-const WRITABLE = {
-  alignment: path.join(DATA, 'alignment.json'),
-  nodes: path.join(DATA, 'nodes.json'),
-  brands: path.join(DATA, 'brands.json'),
-};
+/** The files the API will write, by the key the tools use. */
+const WRITABLE = new Set(['alignment', 'nodes', 'brands', 'sources', 'names', 'tour']);
 
 /** Cap on a posted body, so a runaway request cannot exhaust memory. */
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
@@ -56,28 +44,48 @@ export function devApi() {
     apply: 'serve',
     configureServer(server) {
       server.middlewares.use('/tour/api', async (req, res) => {
-        const url = (req.url ?? '/').split('?')[0];
+        const url = new URL(req.url ?? '/', 'http://studio');
+        const route = url.pathname;
+        const slug = url.searchParams.get('tour');
 
         try {
-          if (req.method === 'GET' && url === '/state') return json(res, await readState());
-          if (req.method === 'GET' && url === '/photos') return json(res, await listPhotos());
-          if (req.method === 'GET' && url === '/preview') {
-            return sendPreview(res, new URL(req.url, 'http://x').searchParams.get('file'));
+          if (req.method === 'GET' && route === '/tours') return json(res, await tourList());
+          if (req.method === 'POST' && route === '/tours') {
+            return json(res, await createTour(await body(req)));
           }
-          if (req.method === 'POST' && url.startsWith('/save/')) {
-            return json(res, await save(url.slice('/save/'.length), await body(req)));
+
+          if (req.method === 'GET' && route === '/state') return json(res, await readState(slug));
+          if (req.method === 'GET' && route === '/photos') return json(res, await listPhotos(slug));
+          if (req.method === 'GET' && route === '/preview') {
+            // Awaited deliberately: returning the promise would let a rejection
+            // escape this try and take the dev server down with it.
+            return await sendPreview(res, slug, url.searchParams.get('file'));
           }
-          if (req.method === 'POST' && url === '/process') {
-            return json(res, await runPipeline(await body(req)));
+
+          if (req.method === 'POST' && route.startsWith('/save/')) {
+            return json(res, await save(slug, route.slice('/save/'.length), await body(req)));
           }
-          if (req.method === 'POST' && url === '/assign') return json(res, await assign(await body(req)));
-          if (req.method === 'POST' && url === '/rename') return json(res, await rename(await body(req)));
-          if (req.method === 'POST' && url === '/add-node') return json(res, await addNode(await body(req)));
-          if (req.method === 'POST' && url === '/remove-node') {
-            return json(res, await removeNode(await body(req)));
+          if (req.method === 'POST' && route === '/process') {
+            return json(res, await runPipeline(slug, await body(req)));
           }
+          if (req.method === 'POST' && route === '/assign') {
+            return json(res, await assign(slug, await body(req)));
+          }
+          if (req.method === 'POST' && route === '/rename') {
+            return json(res, await rename(slug, await body(req)));
+          }
+          if (req.method === 'POST' && route === '/add-node') {
+            return json(res, await addNode(slug, await body(req)));
+          }
+          if (req.method === 'POST' && route === '/remove-node') {
+            return json(res, await removeNode(slug, await body(req)));
+          }
+
           return json(res, { error: 'not found' }, 404);
         } catch (err) {
+          // No request may crash the studio. A malformed slug or a missing file
+          // is a 400, not a dead server.
+          if (res.headersSent) return res.end();
           return json(res, { error: err.message }, 400);
         }
       });
@@ -85,52 +93,83 @@ export function devApi() {
   };
 }
 
-/**
- * The roster, read from disk on every call rather than imported.
- *
- * `src/lib/nodes.js` imports names.json statically, and importing that here
- * would pull the file into Vite's config dependency graph — so every rename,
- * add or remove would restart the whole dev server and drop the request that
- * caused it. The studio edits this file constantly, so it has to be read, not
- * imported.
- */
-async function readRoster() {
-  const names = (await readJson(NAMES_JSON))?.nodes ?? {};
-  const numbers = Object.keys(names)
-    .map(Number)
-    .filter(Number.isInteger)
-    .sort((a, b) => a - b);
+/* ------------------------------------------------------------------ *
+ * Tours
+ * ------------------------------------------------------------------ */
 
-  return {
-    numbers,
-    info(n) {
-      const entry = names[nodeId(n)];
+async function tourList() {
+  const slugs = await listTours();
+
+  const tours = await Promise.all(
+    slugs.map(async (slug) => {
+      const paths = await tourPaths(slug);
+      const roster = await loadRoster(paths);
+      const nodes = (await readJson(paths.file('nodes')))?.nodes ?? {};
+      const links = Object.values(nodes).flatMap((n) => n.links ?? []);
+
       return {
-        name: entry?.name ?? `؟ (${nodeId(n)})`,
-        type: entry?.type ?? 'unknown',
-        unconfirmed: Boolean(entry?.unconfirmed),
+        slug,
+        title: paths.config.title ?? slug,
+        nodes: roster.count,
+        links: links.length,
+        linksPicked: links.filter((l) => !l.auto).length,
       };
-    },
-  };
+    }),
+  );
+
+  return { tours };
+}
+
+/**
+ * Creates a tour folder from scratch.
+ *
+ * Starts genuinely empty — no nodes, no links. Nodes are added in the studio,
+ * which is the only way a second venue can work: its layout is not knowable in
+ * advance.
+ */
+async function createTour({ slug, title, rawDir }) {
+  assertSlug(slug);
+
+  const dir = path.join(TOURS_DIR, slug);
+  if (await exists(path.join(dir, 'tour.json'))) throw new Error(`Tour "${slug}" already exists`);
+
+  await mkdir(dir, { recursive: true });
+
+  await writeJsonAt(path.join(dir, 'tour.json'), {
+    slug,
+    title: title?.trim() || slug,
+    lang: 'fa',
+    dir: 'rtl',
+    startNode: 1,
+    rawDir: rawDir?.trim() || `raw/${slug}`,
+    mapFromNode: 1,
+  });
+
+  await writeNames(path.join(dir, 'names.json'), {
+    _comment: 'Display names and node types, one node per line. Edited from the studio.',
+    nodes: {},
+  });
+  await writeJsonAt(path.join(dir, 'sources.json'), { sources: {} });
+  await writeJsonAt(path.join(dir, 'brands.json'), { brands: {} });
+
+  return { slug, created: true };
 }
 
 /* ------------------------------------------------------------------ *
  * State
  * ------------------------------------------------------------------ */
 
-/**
- * What is done and what is not, per node.
- *
- * Read fresh from disk on every request rather than cached — the whole point is
- * that you can drop a file into raw/ in Finder and see it appear.
- */
-async function readState() {
-  const [alignment, tour, sources, roster] = await Promise.all([
-    readJson(WRITABLE.alignment),
-    readJson(WRITABLE.nodes),
-    loadSources(),
-    readRoster(),
+/** What is done and what is not, per node, read fresh from disk every time. */
+async function readState(slug) {
+  const paths = await tourPaths(slug);
+  const [alignment, tour, sourcesFile, roster] = await Promise.all([
+    readJson(paths.file('alignment')),
+    readJson(paths.file('nodes')),
+    readJson(paths.file('sources')),
+    loadRoster(paths),
   ]);
+
+  const sources = sourcesFile?.sources ?? {};
 
   const nodes = await Promise.all(
     roster.numbers.map(async (n) => {
@@ -139,10 +178,11 @@ async function readState() {
       const entry = tour?.nodes?.[id];
       const links = entry?.links ?? [];
       const pan = alignment?.[id];
+      const source = await findRaw(paths.raw, n, sources);
 
       const renditions = {};
       for (const rendition of RENDITION_ORDER) {
-        renditions[rendition] = await exists(path.join(PANOS, panoFilename(n, rendition)));
+        renditions[rendition] = await exists(path.join(paths.panos, panoFilename(n, rendition)));
       }
 
       return {
@@ -151,14 +191,13 @@ async function readState() {
         name: info.name,
         type: info.type,
         unconfirmed: info.unconfirmed,
-        // Same tolerant lookup the pipeline uses: 7.jpg counts as node 7.
-        source: sourceFile(await findRaw(RAW, n, sources)),
-        raw: Boolean(await findRaw(RAW, n, sources)),
+        source: source ? path.basename(source) : null,
+        raw: Boolean(source),
         assigned: Boolean(sources[id]),
         renditions,
         processed: RENDITION_ORDER.every((r) => renditions[r]),
-        // A pan of exactly 0 with no entry means "never visited", which is not
-        // the same as a deliberate 0°.
+        // A pan of 0 with no entry means "never visited", which is not the same
+        // as a deliberate 0°.
         aligned: Boolean(pan && !pan.todo && Number.isFinite(pan.pan)),
         pan: entry?.pan ?? 0,
         links: links.length,
@@ -169,6 +208,10 @@ async function readState() {
   );
 
   return {
+    slug: paths.slug,
+    config: paths.config,
+    rawDir: path.relative(ROOT, paths.raw),
+    hasFloorplan: await exists(paths.floorplan),
     nodes,
     totals: {
       nodes: nodes.length,
@@ -183,17 +226,19 @@ async function readState() {
   };
 }
 
-function sourceFile(fullPath) {
-  return fullPath ? path.basename(fullPath) : null;
-}
-
 /* ------------------------------------------------------------------ *
  * Photos
  * ------------------------------------------------------------------ */
 
-/** Every photo in the raw directory, with which node (if any) claims it. */
-async function listPhotos() {
-  const [files, sources, roster] = await Promise.all([listRaw(RAW), loadSources(), readRoster()]);
+async function listPhotos(slug) {
+  const paths = await tourPaths(slug);
+  const [files, sourcesFile, roster] = await Promise.all([
+    listRaw(paths.raw),
+    readJson(paths.file('sources')),
+    loadRoster(paths),
+  ]);
+
+  const sources = sourcesFile?.sources ?? {};
   const claimedBy = new Map();
 
   for (const [id, file] of Object.entries(sources)) claimedBy.set(path.basename(file), id);
@@ -203,19 +248,16 @@ async function listPhotos() {
   for (const n of roster.numbers) {
     const id = nodeId(n);
     if (sources[id]) continue;
-
-    const found = await findRaw(RAW, n, sources);
+    const found = await findRaw(paths.raw, n, sources);
     if (found) claimedBy.set(path.basename(found), id);
   }
 
   const photos = await Promise.all(
     files.map(async (file) => ({
       file,
-      bytes: (await statOrNull(path.join(RAW, file)))?.size ?? 0,
+      bytes: (await statOrNull(path.join(paths.raw, file)))?.size ?? 0,
       node: claimedBy.get(file) ?? null,
-      explicit: Boolean(
-        Object.entries(sources).find(([, f]) => path.basename(f) === file),
-      ),
+      explicit: Object.values(sources).some((f) => path.basename(f) === file),
     })),
   );
 
@@ -223,20 +265,21 @@ async function listPhotos() {
 }
 
 /**
- * A small preview of a source photo, so the studio can show what each node
- * actually contains rather than a filename.
+ * A small preview of a source photo, cached.
  *
- * Generated on demand and cached — these come from 71-megapixel originals, and
- * decoding one per row on every page load would be unusable.
+ * These come from 71-megapixel originals; decoding one per row on every page
+ * load would be unusable.
  */
-async function sendPreview(res, file) {
+async function sendPreview(res, slug, file) {
   if (!file || file !== path.basename(file)) return json(res, { error: 'bad file' }, 400);
 
-  const source = path.join(RAW, file);
+  const paths = await tourPaths(slug);
+  const source = path.join(paths.raw, file);
   if (!(await statOrNull(source))) return json(res, { error: 'no such photo' }, 404);
 
-  await mkdir(PREVIEWS, { recursive: true });
-  const cached = path.join(PREVIEWS, `${file.replace(/\.[^.]+$/, '')}.jpg`);
+  const previews = path.join(paths.panos, '.previews');
+  await mkdir(previews, { recursive: true });
+  const cached = path.join(previews, `${file.replace(/\.[^.]+$/, '')}.jpg`);
 
   try {
     if (!(await statOrNull(cached))) {
@@ -256,15 +299,16 @@ async function sendPreview(res, file) {
 }
 
 /** Points a node at a specific photo, or clears the assignment. */
-async function assign({ node, file }) {
+async function assign(slug, { node, file }) {
+  const paths = await tourPaths(slug);
   const id = requireNode(node);
-  const sources = await loadSources();
+  const sources = (await readJson(paths.file('sources')))?.sources ?? {};
 
   if (file === null || file === '') {
     delete sources[id];
   } else {
     const name = path.basename(String(file));
-    if (!(await statOrNull(path.join(RAW, name)))) {
+    if (!(await statOrNull(path.join(paths.raw, name)))) {
       throw new Error(`"${name}" is not in the raw folder`);
     }
     // One photo per node: clear any other node holding this file, or the same
@@ -275,7 +319,7 @@ async function assign({ node, file }) {
     sources[id] = name;
   }
 
-  await writeSources(sources);
+  await writeJsonAt(paths.file('sources'), { sources });
   return { node: id, file: sources[id] ?? null };
 }
 
@@ -283,11 +327,11 @@ async function assign({ node, file }) {
  * Roster
  * ------------------------------------------------------------------ */
 
-/** Renames a node, or changes its type / unconfirmed flag. */
-async function rename({ node, name, type, unconfirmed }) {
+async function rename(slug, { node, name, type, unconfirmed }) {
+  const paths = await tourPaths(slug);
   const id = requireNode(node);
-  const names = await readJson(NAMES_JSON);
-  const entry = names.nodes[id];
+  const names = (await readJson(paths.file('names'))) ?? { nodes: {} };
+  const entry = (names.nodes[id] ??= { name: '', type: 'booth' });
 
   if (typeof name === 'string' && name.trim()) entry.name = name.trim();
   if (typeof type === 'string' && type.trim()) entry.type = type.trim();
@@ -295,89 +339,108 @@ async function rename({ node, name, type, unconfirmed }) {
   if (unconfirmed === true) entry.unconfirmed = true;
   else if (unconfirmed === false) delete entry.unconfirmed;
 
-  await writeJson(NAMES_JSON, names);
+  await writeNames(paths.file('names'), names);
   return { node: id, ...entry };
 }
 
 /**
- * Adds a node to the roster.
+ * Appends a node.
  *
  * Appends after the highest existing number rather than renumbering, because
  * renumbering would invalidate every alignment, arrow and map point already
  * recorded against the old numbers.
  */
-async function addNode({ name, type } = {}) {
-  const names = await readJson(NAMES_JSON);
+async function addNode(slug, { name, type } = {}) {
+  const paths = await tourPaths(slug);
+  const names = (await readJson(paths.file('names'))) ?? { nodes: {} };
   const next = Math.max(0, ...Object.keys(names.nodes).map(Number)) + 1;
   const id = nodeId(next);
 
   names.nodes[id] = {
-    name: typeof name === 'string' && name.trim() ? name.trim() : `نود ${next}`,
-    type: typeof type === 'string' && type.trim() ? type.trim() : 'booth',
+    name: name?.trim() || `نقطه ${next}`,
+    type: type?.trim() || 'booth',
     unconfirmed: true,
   };
 
-  await writeJson(NAMES_JSON, names);
+  await writeNames(paths.file('names'), names);
   return { node: id, added: true };
 }
 
-/**
- * Removes a node from the roster and everything keyed to it.
- *
- * Leaves the remaining numbers alone for the same reason `addNode` appends: the
- * numbers are referenced by alignment.json, nodes.json and sources.json, and
- * shifting them would silently reattach recorded work to the wrong panoramas.
- */
-async function removeNode({ node }) {
+/** Removes a node and everything keyed to it. Survivors keep their numbers. */
+async function removeNode(slug, { node }) {
+  const paths = await tourPaths(slug);
   const id = requireNode(node);
-  const names = await readJson(NAMES_JSON);
+  const names = await readJson(paths.file('names'));
 
-  if (Object.keys(names.nodes).length <= 1) throw new Error('cannot remove the last node');
+  if (Object.keys(names?.nodes ?? {}).length <= 1) throw new Error('cannot remove the last node');
   delete names.nodes[id];
-  await writeJson(NAMES_JSON, names);
+  await writeNames(paths.file('names'), names);
 
-  const sources = await loadSources();
-  if (sources[id]) {
-    delete sources[id];
-    await writeSources(sources);
-  }
-
-  for (const file of [WRITABLE.alignment, WRITABLE.nodes]) {
+  for (const key of ['sources', 'alignment', 'nodes']) {
+    const file = paths.file(key);
     const data = await readJson(file);
     if (!data) continue;
-    if (data[id]) delete data[id];
-    if (data.nodes?.[id]) delete data.nodes[id];
-    await writeJson(file, data);
+
+    let touched = false;
+
+    if (data[id]) {
+      delete data[id];
+      touched = true;
+    }
+    if (data.sources?.[id]) {
+      delete data.sources[id];
+      touched = true;
+    }
+    if (data.nodes?.[id]) {
+      delete data.nodes[id];
+      touched = true;
+    }
+
+    // Links pointing at the removed node have to go too, or the next build
+    // fails on a link to a node that is not in the roster.
+    for (const entry of Object.values(data.nodes ?? {})) {
+      const before = entry.links?.length ?? 0;
+      if (before) entry.links = entry.links.filter((l) => l.node !== id);
+      if ((entry.links?.length ?? 0) !== before) touched = true;
+    }
+
+    if (touched) await writeJsonAt(file, data);
   }
 
   return { node: id, removed: true };
 }
 
-function requireNode(node) {
-  const n = Number(node);
-  if (!Number.isInteger(n) || n < 1 || n > 999) throw new Error(`"${node}" is not a node number`);
-  return nodeId(n);
+/* ------------------------------------------------------------------ *
+ * Writing
+ * ------------------------------------------------------------------ */
+
+async function save(slug, name, payload) {
+  if (!WRITABLE.has(name)) throw new Error(`"${name}" is not a writable file`);
+  if (payload === null || typeof payload !== 'object') {
+    throw new Error('body must be a JSON object');
+  }
+
+  const paths = await tourPaths(slug);
+  const target = paths.file(name);
+
+  if (name === 'names') await writeNames(target, payload);
+  else await writeJsonAt(target, payload);
+
+  return { saved: path.relative(ROOT, target) };
 }
 
-async function writeSources(sources) {
-  const existing = (await readJson(SOURCES_JSON)) ?? {};
-  await writeJson(SOURCES_JSON, { ...existing, sources });
-}
-
-async function writeJson(file, payload) {
-  const body = file === NAMES_JSON ? serialiseNames(payload) : JSON.stringify(payload, null, 2);
-  await writeFile(file, `${body}\n`);
+async function writeJsonAt(file, payload) {
+  await writeFile(file, `${JSON.stringify(payload, null, 2)}\n`);
 }
 
 /**
  * Writes names.json one node per line, in numeric order.
  *
- * Two reasons not to use plain JSON.stringify here. It expands every node to
- * four lines, which buries a name change in noise; and JS hoists integer-like
- * keys, so "10"…"44" would come out ahead of "01"…"09" and the file would no
- * longer read in tour order.
+ * Plain JSON.stringify expands every node to four lines, burying a name change
+ * in noise, and JS hoists integer-like keys so "10"…"44" would come out ahead
+ * of "01"…"09" and the file would stop reading in tour order.
  */
-function serialiseNames(payload) {
+async function writeNames(file, payload) {
   const ids = Object.keys(payload.nodes).sort((a, b) => Number(a) - Number(b));
 
   const lines = ids.map((id) => {
@@ -387,45 +450,25 @@ function serialiseNames(payload) {
     return `    ${JSON.stringify(id)}: { ${fields.join(', ')} }`;
   });
 
-  const comment = payload._comment ? `  ${JSON.stringify('_comment')}: ${JSON.stringify(payload._comment)},\n` : '';
-  return `{\n${comment}  "nodes": {\n${lines.join(',\n')}\n  }\n}`;
-}
-
-/* ------------------------------------------------------------------ *
- * Writing
- * ------------------------------------------------------------------ */
-
-async function save(name, payload) {
-  const target = WRITABLE[name];
-  if (!target) throw new Error(`"${name}" is not a writable file`);
-  if (payload === null || typeof payload !== 'object') {
-    throw new Error('body must be a JSON object');
-  }
-
-  await writeFile(target, `${JSON.stringify(payload, null, 2)}\n`);
-  return { saved: path.relative(ROOT, target) };
+  const comment = payload._comment ? `  "_comment": ${JSON.stringify(payload._comment)},\n` : '';
+  await writeFile(file, `{\n${comment}  "nodes": {\n${lines.join(',\n')}\n  }\n}\n`);
 }
 
 /* ------------------------------------------------------------------ *
  * Pipeline
  * ------------------------------------------------------------------ */
 
-/**
- * Re-runs the image pipeline for a single node, so a replaced photo can be
- * picked up without leaving the browser.
- *
- * `node` is validated against the roster and passed as an argv element, never
- * interpolated into a shell string.
- */
-async function runPipeline({ node }) {
+async function runPipeline(slug, { node }) {
+  const paths = await tourPaths(slug);
+  const roster = await loadRoster(paths);
   const n = Number(node);
-  const roster = await readRoster();
-  if (!roster.numbers.includes(n)) throw new Error(`"${node}" is not a node in the roster`);
+
+  if (!roster.has(n)) throw new Error(`"${node}" is not a node in this tour`);
 
   return new Promise((resolve) => {
     execFile(
       process.execPath,
-      [path.join(ROOT, 'scripts/process.js'), `--only=${n}`, '--force'],
+      [path.join(ROOT, 'scripts/process.js'), `--tour=${paths.slug}`, `--only=${n}`, '--force'],
       { cwd: ROOT, timeout: 5 * 60 * 1000 },
       (err, stdout, stderr) => {
         resolve({
@@ -441,6 +484,12 @@ async function runPipeline({ node }) {
 /* ------------------------------------------------------------------ *
  * Plumbing
  * ------------------------------------------------------------------ */
+
+function requireNode(node) {
+  const n = Number(node);
+  if (!Number.isInteger(n) || n < 1 || n > 999) throw new Error(`"${node}" is not a node number`);
+  return nodeId(n);
+}
 
 function body(req) {
   return new Promise((resolve, reject) => {
@@ -472,14 +521,6 @@ function json(res, payload, status = 200) {
   res.end(JSON.stringify(payload));
 }
 
-async function readJson(file) {
-  try {
-    return JSON.parse(await readFile(file, 'utf8'));
-  } catch {
-    return null;
-  }
-}
-
 async function exists(file) {
   return Boolean(await statOrNull(file));
 }
@@ -496,5 +537,5 @@ async function statOrNull(file) {
 /** The pipeline colours its output; the browser shows it as plain text. */
 function stripAnsi(value) {
   // eslint-disable-next-line no-control-regex
-  return value.replace(/\[[0-9;]*m/g, '');
+  return value.replace(/\[[0-9;]*m/g, '');
 }

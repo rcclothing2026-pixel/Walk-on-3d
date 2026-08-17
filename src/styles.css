@@ -6,25 +6,32 @@
  * than being hand-flipped.
  */
 
-/* ---------- font ---------- */
+/* ---------- font ---------- *
+ *
+ * Referenced relative to this stylesheet so that Vite resolves it as an asset:
+ * it then emits a hashed copy next to the CSS and rewrites this URL for both
+ * dev and build. Pointing at public/ instead looked simpler but cannot work —
+ * in dev the styles are injected into the page at /tour/ and in a build they
+ * live in assets/, so no single hand-written relative path is right in both.
+ */
 
 @font-face {
   font-family: 'Vazirmatn';
-  src: url('/tour/fonts/Vazirmatn-Regular.woff2') format('woff2');
+  src: url('./fonts/Vazirmatn-Regular.woff2') format('woff2');
   font-weight: 400;
   font-display: swap;
 }
 
 @font-face {
   font-family: 'Vazirmatn';
-  src: url('/tour/fonts/Vazirmatn-Medium.woff2') format('woff2');
+  src: url('./fonts/Vazirmatn-Medium.woff2') format('woff2');
   font-weight: 500;
   font-display: swap;
 }
 
 @font-face {
   font-family: 'Vazirmatn';
-  src: url('/tour/fonts/Vazirmatn-Bold.woff2') format('woff2');
+  src: url('./fonts/Vazirmatn-Bold.woff2') format('woff2');
   font-weight: 700;
   font-display: swap;
 }

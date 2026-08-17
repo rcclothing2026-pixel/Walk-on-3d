@@ -13,9 +13,13 @@
  * part of the production build.
  */
 
+import { tourLink, tourSlug, withTour } from './save.js';
+
 const API = '/tour/api';
 
 const el = {
+  tour: document.getElementById('tour'),
+  newTour: document.getElementById('new-tour'),
   summary: document.getElementById('summary'),
   cards: document.getElementById('cards'),
   rows: document.getElementById('rows'),
@@ -28,17 +32,22 @@ const el = {
   logTitle: document.getElementById('log-title'),
   logBody: document.getElementById('log-body'),
   logClose: document.getElementById('log-close'),
+  openTour: document.getElementById('open-tour'),
   status: document.getElementById('status'),
 };
 
 let state = null;
 let photos = null;
+let tours = [];
+let slug = tourSlug();
 
 start();
 
 async function start() {
   el.refresh.addEventListener('click', refresh);
   el.addNode.addEventListener('click', addNode);
+  el.newTour.addEventListener('click', createTour);
+  el.tour.addEventListener('change', () => selectTour(el.tour.value));
   el.logClose.addEventListener('click', () => (el.log.hidden = true));
 
   window.addEventListener('keydown', (event) => {
@@ -54,9 +63,12 @@ async function refresh() {
   el.refresh.disabled = true;
 
   try {
+    await loadTours();
+    if (!slug) return;
+
     const [stateRes, photosRes] = await Promise.all([
-      fetch(`${API}/state`),
-      fetch(`${API}/photos`),
+      fetch(withTour('/state', { tour: slug })),
+      fetch(withTour('/photos', { tour: slug })),
     ]);
     if (!stateRes.ok) throw new Error(String(stateRes.status));
 
@@ -75,6 +87,92 @@ async function refresh() {
   } finally {
     el.refresh.disabled = false;
   }
+}
+
+/**
+ * Loads the tour list and settles on one.
+ *
+ * With several tours the choice has to be explicit and sticky, so it is kept in
+ * the URL — that way every link out to a tool carries it, and a reload does not
+ * silently land you on a different venue.
+ */
+async function loadTours() {
+  const response = await fetch(`${API}/tours`);
+  if (!response.ok) throw new Error(String(response.status));
+
+  tours = (await response.json()).tours ?? [];
+
+  if (!tours.length) {
+    el.tour.innerHTML = '';
+    showStatus(
+      '<strong>No tours yet.</strong><br /><br />Press <strong>+ Tour</strong> to create one.',
+    );
+    return;
+  }
+
+  if (!tours.some((t) => t.slug === slug)) slug = tours[0].slug;
+
+  // Put it in the URL before anything renders — tourLink() reads it from there.
+  syncUrl();
+
+  el.tour.innerHTML = tours
+    .map(
+      (t) =>
+        `<option value="${escapeHtml(t.slug)}"${t.slug === slug ? ' selected' : ''}>` +
+        `${escapeHtml(t.title)} (${t.nodes})</option>`,
+    )
+    .join('');
+
+  syncUrl();
+  el.openTour.href = tourLink('/tour/');
+}
+
+function selectTour(next) {
+  slug = next;
+  syncUrl();
+  refresh();
+}
+
+/** Keeps ?tour= in the address bar without stacking history entries. */
+function syncUrl() {
+  const url = new URL(location.href);
+  url.searchParams.set('tour', slug);
+  history.replaceState(null, '', url);
+}
+
+/** Creates an empty tour: no nodes, no links, ready to be built up. */
+async function createTour() {
+  const title = window.prompt('Name for the new tour (shown to visitors):');
+  if (!title?.trim()) return;
+
+  const suggested = title
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 40);
+
+  const wanted = window.prompt(
+    'Short id — used for the folder and the URL.\nLower-case letters, digits and hyphens.',
+    suggested || 'tour',
+  );
+  if (!wanted?.trim()) return;
+
+  const result = await post('/tours', { slug: wanted.trim(), title: title.trim() });
+  if (result.error) {
+    openLog('Could not create that tour', result.error);
+    return;
+  }
+
+  slug = result.slug;
+  await refresh();
+  openLog(
+    `Tour "${result.slug}" created`,
+    'It has no nodes yet.\n\n' +
+      `1. Put its photographs somewhere and set rawDir in tours/${result.slug}/tour.json\n` +
+      '2. Add a floor plan as floorplan.png in that folder\n' +
+      '3. Press + Node for each shooting point, then assign photos to them',
+  );
 }
 
 /* ------------------------------------------------------------------ *
@@ -151,21 +249,21 @@ function renderCards(totals) {
       done: totals.aligned,
       total: totals.nodes,
       hint: 'Must be finished before arrows',
-      link: '/tour/tools/align.html',
+      link: tourLink('/tour/tools/align.html'),
     },
     {
       title: '3 · Arrows',
       done: totals.linksPicked,
       total: totals.links,
       hint: 'Auto-placed until picked',
-      link: '/tour/tools/hotspots.html',
+      link: tourLink('/tour/tools/hotspots.html'),
     },
     {
       title: '4 · Map points',
       done: totals.mapped,
       total: totals.nodes,
       hint: 'The mini-map needs at least one',
-      link: '/tour/tools/map.html',
+      link: tourLink('/tour/tools/map.html'),
     },
   ];
 
@@ -224,10 +322,10 @@ function renderRows() {
         </td>
         <td>${tick(Boolean(node.map))}</td>
         <td class="grid__actions">
-          <a class="btn btn--tiny" href="/tour/tools/align.html?node=${node.node}">align</a>
-          <a class="btn btn--tiny" href="/tour/tools/hotspots.html?node=${node.node}">arrows</a>
-          <a class="btn btn--tiny" href="/tour/tools/map.html?node=${node.node}">map</a>
-          <a class="btn btn--tiny" href="/tour/?node=${node.node}" target="_blank" rel="noopener">view</a>
+          <a class="btn btn--tiny" href="${tourLink('/tour/tools/align.html', { node: node.node })}">align</a>
+          <a class="btn btn--tiny" href="${tourLink('/tour/tools/hotspots.html', { node: node.node })}">arrows</a>
+          <a class="btn btn--tiny" href="${tourLink('/tour/tools/map.html', { node: node.node })}">map</a>
+          <a class="btn btn--tiny" href="${tourLink('/tour/', { node: node.node })}" target="_blank" rel="noopener">view</a>
           <button class="btn btn--tiny" data-build="${node.node}"${node.raw ? '' : ' disabled'}>
             rebuild
           </button>
@@ -419,7 +517,7 @@ async function removeNode(node) {
 
 async function post(endpoint, payload) {
   try {
-    const response = await fetch(`${API}${endpoint}`, {
+    const response = await fetch(withTour(endpoint), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),

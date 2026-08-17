@@ -27,12 +27,16 @@ import '@photo-sphere-viewer/map-plugin/index.css';
 import './styles.css';
 
 import { assetUrl, floorplanUrl, panoUrl } from './lib/paths.js';
+import { loadTourData } from './lib/tour-data.js';
 import { QualityManager, loadManifest } from './lib/quality.js';
 import { BrandPanel } from './lib/panel.js';
 import { Gyroscope, registerControls } from './lib/controls.js';
 
-/** Nodes 1–3 are the staircase descent; the map reads badly at the plan's edge. */
-const MAP_HIDDEN_UNTIL_NODE = 4;
+/**
+ * The map stays hidden below this node — per tour, since which nodes sit
+ * awkwardly at the plan's edge is a property of the venue.
+ */
+let mapFromNode = 1;
 
 /**
  * Whether any node has been placed on the floor plan.
@@ -61,11 +65,21 @@ const el = {
 boot().catch(showFatal);
 
 async function boot() {
-  const [tour, brands, manifest] = await Promise.all([
-    fetchJson('tour data', new URL('./data/nodes.json', import.meta.url)),
-    fetchJson('brands', new URL('./data/brands.json', import.meta.url)).catch(() => null),
-    loadManifest(),
-  ]);
+  const [data, manifest] = await Promise.all([loadTourData(), loadManifest()]);
+
+  if (!data.nodes) {
+    throw new Error(
+      `Tour "${data.slug}" has no generated graph. Run: npm run nodes -- --tour=${data.slug}`,
+    );
+  }
+
+  const tour = { start: data.config.startNode ?? 1, nodes: data.nodes };
+  const brands = { brands: data.brands };
+  mapFromNode = Number(data.config.mapFromNode) || 1;
+
+  document.title = data.config.title ?? document.title;
+  document.documentElement.lang = data.config.lang ?? 'fa';
+  document.documentElement.dir = data.config.dir ?? 'rtl';
 
   const startNode = resolveStartNode(tour);
   currentNode = String(startNode).padStart(2, '0');
@@ -318,7 +332,7 @@ function mapConfig() {
 function syncMapVisibility(mapPlugin, node) {
   if (!mapPlugin) return;
 
-  if (!mapUsable || node < MAP_HIDDEN_UNTIL_NODE) {
+  if (!mapUsable || node < mapFromNode) {
     mapPlugin.hide();
     return;
   }
@@ -393,12 +407,6 @@ function syncUrl(node) {
 /* ------------------------------------------------------------------ *
  * Helpers
  * ------------------------------------------------------------------ */
-
-async function fetchJson(label, url) {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`could not load ${label} (${response.status})`);
-  return response.json();
-}
 
 function showFatal(err, message = 'بارگذاری تور ممکن نشد.') {
   console.error('[tour]', err);

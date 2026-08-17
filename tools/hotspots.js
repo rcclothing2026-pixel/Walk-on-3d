@@ -26,14 +26,12 @@ import { MarkersPlugin } from '@photo-sphere-viewer/markers-plugin';
 import '@photo-sphere-viewer/core/index.css';
 import '@photo-sphere-viewer/markers-plugin/index.css';
 
-import { panoUrl } from '../src/lib/paths.js';
-import { nodeInfo, nodeNumbers } from '../src/lib/nodes.js';
-import { downloadJson, saveData } from './save.js';
+import { panoUrl, dataUrl } from '../src/lib/paths.js';
+import { loadTourData } from '../src/lib/tour-data.js';
+import { downloadJson, saveData, tourLink } from './save.js';
 
-const NODES = nodeNumbers();
-/* Resolved against this module's own URL, not the site root. The dev server
- * serves the tour under /tour/, so a root-absolute path silently 404s. */
-const NODES_PATH = new URL('../src/data/nodes.json', import.meta.url);
+let NODES = [];
+let tourData = null;
 const RENDITION = 'mid';
 
 /** The brief's acceptable band for a floor arrow. */
@@ -73,6 +71,9 @@ let placementEnabled = true;
 start();
 
 async function start() {
+  tourData = await loadTourData();
+  NODES = tourData.numbers();
+
   tour = await loadTour();
   if (!tour) return;
 
@@ -86,7 +87,7 @@ async function start() {
 
 async function loadTour() {
   try {
-    const response = await fetch(NODES_PATH);
+    const response = await fetch(dataUrl('nodes'));
     if (!response.ok) throw new Error(String(response.status));
     return await response.json();
   } catch {
@@ -212,7 +213,7 @@ function syncMarkers() {
   nodeData().links.forEach((link, index) => {
     const active = index === activeIndex;
     const bad = !pitchOk(link.pitch);
-    const target = nodeInfo(Number(link.node));
+    const target = tourData.info(Number(link.node));
 
     markers.addMarker({
       id: `link-${link.node}`,
@@ -247,7 +248,7 @@ function renderLinks() {
 
   el.links.innerHTML = links
     .map((link, index) => {
-      const target = nodeInfo(Number(link.node));
+      const target = tourData.info(Number(link.node));
       const bad = !pitchOk(link.pitch);
 
       return `
@@ -286,7 +287,7 @@ function syncProgress() {
 }
 
 function syncNodeChrome() {
-  const { name, type } = nodeInfo(current);
+  const { name, type } = tourData.info(current);
   const pan = nodeData().pan ?? 0;
 
   el.node.value = String(current);
@@ -458,7 +459,7 @@ function pitchOk(pitch) {
 
 function buildNodeOptions() {
   el.node.innerHTML = NODES.map((n) => {
-    const { name } = nodeInfo(n);
+    const { name } = tourData.info(n);
     return `<option value="${n}">${pad(n)} — ${escapeHtml(name)}</option>`;
   }).join('');
 }

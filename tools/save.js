@@ -1,24 +1,48 @@
 /**
- * Saving from the tools.
+ * Saving from the tools, and knowing which tour is being edited.
  *
- * Writes straight to src/data/ through the studio API, so there is no
- * download-and-move step. Across 43 nodes and three tools that step was the
- * most tedious part of building the tour.
+ * Writes straight into the tour's folder through the studio API, so there is no
+ * download-and-move step. Across dozens of nodes and several tools that step
+ * was the most tedious part of building a tour.
  *
- * Falls back to a download if the API is not reachable — the tools stay usable
- * if someone opens them without the dev server, they just cannot write.
+ * Falls back to a download if the API is not reachable, so the tools stay
+ * usable when opened without the dev server — they just cannot write.
  */
 
 const API = '/tour/api';
 
 /**
- * @param {'alignment'|'nodes'|'brands'} file
+ * The tour these tools are editing, read from the URL on every call.
+ *
+ * Not captured once at module load: the studio switches tours by rewriting the
+ * query string, so a snapshot taken at import time would still be the tour the
+ * page happened to open with, and every link would carry the wrong venue.
+ */
+export function tourSlug() {
+  return new URLSearchParams(location.search).get('tour') ?? '';
+}
+
+/** Appends the tour to a query string, so every call is scoped to one venue. */
+export function withTour(url, params = {}) {
+  const query = new URLSearchParams({ tour: tourSlug(), ...params });
+  return `${API}${url}?${query}`;
+}
+
+/** Keeps ?tour= when linking between tools, so the selection survives. */
+export function tourLink(href, params = {}) {
+  const url = new URL(href, location.origin);
+  url.searchParams.set('tour', tourSlug());
+  for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
+  return url.pathname + url.search;
+}
+
+/**
+ * @param {'alignment'|'nodes'|'brands'|'sources'|'names'} file
  * @param {object} payload
- * @returns {Promise<{ok: boolean, saved?: string, error?: string}>}
  */
 export async function saveData(file, payload) {
   try {
-    const response = await fetch(`${API}/save/${file}`, {
+    const response = await fetch(withTour(`/save/${file}`), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
