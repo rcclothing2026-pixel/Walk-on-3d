@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hotspots — Walk on 3D</title>
+    <link rel="stylesheet" href="./tools.css" />
+  </head>
+  <body class="has-panel">
+    <div id="viewer" class="viewer viewer--panelled"></div>
+
+    <header class="bar bar--top">
+      <div class="group">
+        <button id="prev" class="btn" title="Previous node (Page Up)">‹</button>
+        <select id="node" class="select" aria-label="Node"></select>
+        <button id="next" class="btn" title="Next node (Page Down)">›</button>
+      </div>
+
+      <div class="group group--name">
+        <span id="node-name" class="node-name" dir="rtl"></span>
+        <span id="node-type" class="tag"></span>
+        <span id="node-pan" class="tag" title="sphereCorrection.pan from alignment.json"></span>
+        <span id="align-warn" class="tag tag--warn" hidden>not aligned</span>
+      </div>
+
+      <div class="group">
+        <span id="progress" class="progress"></span>
+        <button id="copy" class="btn btn--primary" title="Copy this node's links array">Copy node</button>
+        <button id="download" class="btn" title="Download the merged nodes.json">Download all</button>
+      </div>
+    </header>
+
+    <aside class="panel">
+      <div class="panel__head">
+        <span>Links from this node</span>
+        <span id="link-count" class="progress"></span>
+      </div>
+      <ol id="links" class="links"></ol>
+      <p class="panel__hint">
+        Pick a target, then click where its arrow belongs on the floor. Floor arrows
+        should sit between <strong>−15°</strong> and <strong>−30°</strong> pitch.
+      </p>
+    </aside>
+
+    <footer class="bar bar--bottom">
+      <span class="slider-label">pitch</span>
+      <input id="pitch" class="slider" type="range" min="-60" max="10" step="0.5" value="-20" />
+      <input id="pitch-value" class="number" type="number" min="-90" max="90" step="0.5" value="-20" />
+      <span class="unit">°</span>
+      <span class="slider-label">yaw</span>
+      <input id="yaw-value" class="number" type="number" min="0" max="360" step="0.5" value="0" />
+      <span class="unit">°</span>
+      <button id="reset-link" class="btn" title="Send this link back to auto placement">Reset link</button>
+      <button id="reset-node" class="btn" title="Reset every link on this node">Reset node</button>
+    </footer>
+
+    <div id="status" class="status" hidden></div>
+
+    <div id="help" class="help">
+      <strong>Click</strong> to place · <strong>Tab</strong> next link ·
+      <strong>PgUp/PgDn</strong> node · <strong>R</strong> reset link
+    </div>
+
+    <script type="module" src="./hotspots.js"></script>
+  </body>
+</html>

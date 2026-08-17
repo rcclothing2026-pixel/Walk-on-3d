@@ -17,6 +17,7 @@
   --danger: #ff5a5a;
   --ok: #3ddc84;
   --bar-h: 52px;
+  --panel-w: 280px;
   --radius: 8px;
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
@@ -399,4 +400,137 @@ body {
 .help strong {
   color: var(--text);
   font-weight: 600;
+}
+
+/* ---------- hotspot picker ---------- */
+
+.viewer--panelled {
+  inset-inline-start: var(--panel-w);
+}
+
+.panel {
+  position: fixed;
+  inset-block: var(--bar-h);
+  inset-inline-start: 0;
+  z-index: 19;
+  display: flex;
+  flex-direction: column;
+  width: var(--panel-w);
+  border-inline-end: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.panel__hint {
+  margin: 0;
+  padding: 10px 12px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.panel__hint strong {
+  color: var(--text);
+}
+
+.links {
+  flex: 1;
+  margin: 0;
+  padding: 6px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.link {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.link:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.link.is-active {
+  border-color: var(--accent);
+  background: rgba(77, 163, 255, 0.14);
+}
+
+.link__id {
+  color: var(--muted);
+  font-family: ui-monospace, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.link__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.link__angles {
+  grid-column: 2 / -1;
+  color: var(--muted);
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.link__angles.is-bad {
+  color: var(--warn);
+}
+
+.link .tag {
+  grid-column: 3;
+  grid-row: 1;
+  padding: 1px 5px;
+  font-size: 9px;
+}
+
+/* Arrow markers drawn in the scene */
+.hs-marker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transform: scale(var(--s));
+  transition: transform 0.12s ease;
+  pointer-events: none;
+}
+
+.hs-marker svg {
+  width: 34px;
+  height: 34px;
+  fill: var(--c);
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.8));
+}
+
+.hs-marker span {
+  margin-top: -4px;
+  color: var(--c);
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+
+.has-panel .help {
+  inset-inline-start: calc(var(--panel-w) + 14px);
 }
