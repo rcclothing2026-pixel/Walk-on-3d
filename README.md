@@ -15,16 +15,21 @@ UI language is Persian, RTL.
 |---|---|---|
 | 1 | Image pipeline | **done — awaiting review** |
 | 2 | Alignment tool | **done — awaiting review** |
-| 3 | Hotspot picker | not started |
-| 4 | Viewer | not started |
-| 5 | Mobile & polish | not started |
-| 6 | Deployment | not started |
+| 3 | Hotspot picker | **done — awaiting review** |
+| 4 | Viewer | **done — awaiting review** |
+| 5 | Mobile & polish | **done — awaiting review** |
+| 6 | Deployment | **done — awaiting review** |
 
 ## Setup
 
 ```bash
 npm install
+npm run dev    # http://localhost:5173/tour/
 ```
+
+The dev server serves the tour at **`/tour/`**, matching where it lives in
+production, so a path that works locally works deployed. The tools are at
+`/tour/tools/align.html`, `/tour/tools/hotspots.html` and `/tour/tools/map.html`.
 
 `sharp` is the only heavy dependency and ships prebuilt binaries; no native
 toolchain needed.
@@ -40,7 +45,7 @@ the usual sign of a reframed export.
 npm run process
 ```
 
-Emits three renditions per node into `public/tour/panos/`:
+Emits three renditions per node into `panos/`:
 
 | rendition | size | quality | role |
 |---|---|---|---|
@@ -92,7 +97,7 @@ unaligned nodes would all point wrong.
 
 ```bash
 npm run dev
-# then open http://localhost:5173/tools/align.html
+# then open http://localhost:5173/tour/tools/align.html
 ```
 
 Per node:
@@ -124,7 +129,7 @@ Two things worth knowing:
 
 ## The floor plan
 
-`public/tour/floorplan.png` is generated from the architect's AutoCAD sheet:
+`public/floorplan.png` is generated from the architect's AutoCAD sheet:
 
 ```bash
 npm run floorplan
@@ -154,16 +159,16 @@ npm run floorplan -- --keep-render                 # keep the full page to inspe
 Everything reads the plan through `floorplanUrl()` in `src/lib/paths.js`, so
 swapping it is a one-file change.
 
-### Still missing: node positions on the plan
+### Node positions on the plan — still to be done
 
-The mini-map needs an x/y for every node **on this drawing**. What exists today
-is a set of shooting points on a *different* drawing — the photographed event
-board in `docs/shooting-plan.jpg`, which is perspective-distorted and uses its
-own numbering. Those positions cannot be transferred mechanically.
+The mini-map needs an x/y for every node measured on this drawing. Photo Sphere
+Viewer's map plugin cannot draw *at all* without one: its renderer returns early
+when the current node has no centre. Until at least one node is placed, the tour
+leaves the map plugin out entirely and says so in the console.
 
-The cheapest fix is a small picker along the lines of `tools/align.html`: show
-the floor plan, click once per node, emit the coordinates. That is Phase 4 work
-and it needs the numbering question below settled first.
+`tools/map.html` produces them — see below. The shooting points in
+`docs/shooting-plan.jpg` cannot be transferred mechanically: that is a
+perspective photo of a different drawing under its own numbering.
 
 ### Cosmetic note
 
@@ -171,6 +176,115 @@ The plan still carries its survey callouts (`−5/00`, `−3/20`, the level
 markers) and the `حمام` / `حیاط خلوت` / `WC` labels. At mini-map size these
 read as faint specks. Stripping them means editing the vector, so it is left
 until the mini-map exists and it is clear whether they actually hurt.
+
+## Phase 3 — link graph and hotspots
+
+`src/data/graph.js` holds the link graph in the shape the brief expresses it —
+spine, descent, leaves by anchor, cluster chains — and expands it to a symmetric
+adjacency map.
+
+```bash
+npm run nodes            # generate src/data/nodes.json
+npm run nodes -- --check # audit the file on disk, write nothing
+npm run nodes -- --reset # discard picked arrow angles
+```
+
+Re-running **merges**: hand-picked arrow angles and map points survive, only the
+structure is rebuilt.
+
+Validation splits findings deliberately. **Errors fail the build** — a one-way
+link, or a link to a node that does not exist. **Warnings are printed and left
+for a human** — an unreachable node, or a node with fewer links than expected.
+The check runs against the emitted structure rather than the graph it came from,
+so a hand edit or a bad export from the picker is caught.
+
+Links whose arrows have not been picked yet are auto-placed, spread evenly
+around the horizon at −20° and flagged `"auto": true`. That is what lets the
+tour be walkable before a single hotspot exists — the arrows simply point in
+arbitrary directions until someone picks them.
+
+### tools/hotspots.html
+
+Loads a node with its alignment applied and lists its neighbours from the graph.
+Pick a target, click where its arrow belongs. Targets are not free-form, so an
+arrow cannot point somewhere the graph does not connect to. Every link on the
+node is drawn at once — the active one highlighted, anything outside the −15°
+to −30° band in the warning colour.
+
+**Tab** cycles targets, **PgUp/PgDn** changes node, **R** resets a link to auto.
+
+### tools/map.html
+
+Click the plan to place each node; placing advances to the next unplaced one so
+the list can be worked straight down. Coordinates are stored in the plan's own
+pixel space, so they survive a re-export at a different size. **Download all**
+writes the merged `nodes.json`.
+
+## Phase 4–5 — the tour
+
+`src/main.js`. Virtual tour in `3d` mode, mini-map, brand markers, RTL side
+panel, deep links, quality manager.
+
+- **Preloading** is the plugin's `preload: true`, which fetches every linked
+  node's panorama on arrival — verified by watching all five of node 06's
+  neighbours load on entry.
+- **`src/lib/quality.js`** keeps the thumb/mid/full policy in one module. `mid`
+  is always the first fetch; `full` is an upgrade applied only after the user
+  zooms past a threshold, never on a connection under ~2 Mbps, and with the
+  camera held in place so the swap is invisible.
+- **`?node=17`** opens at a node; the URL tracks movement via `replaceState`.
+- **The brand panel** closes three ways: Escape, backdrop, node change.
+- **`brands.json` may be empty** — the marker layer then contributes nothing
+  rather than breaking.
+- **The mini-map** is hidden on nodes 1–3 and appears from node 4.
+- **The navbar differs by input type.** On touch the four `move` arrows are
+  dropped (you drag to look) and a gyroscope toggle appears, off by default.
+  The gyroscope is implemented directly against `DeviceOrientationEvent` rather
+  than adding `@photo-sphere-viewer/gyroscope-plugin`, which is not on the
+  approved dependency list.
+- **`prefers-reduced-motion`** disables the inter-node transition.
+
+### Known issue
+
+Under touch emulation the **first tap on any navbar button is lost**: the bar
+re-lays out during the press and the pointer ends up over a different element.
+This affects Photo Sphere Viewer's own buttons identically — confirmed against
+the built-in fullscreen button — so it is library behaviour, not something these
+custom controls introduced. Priming the touch class and re-measuring after the
+webfont settles were both tried and neither helped, so neither was kept. **Worth
+checking on a real device** before deciding whether to work around it.
+
+## Phase 6 — build and deployment
+
+```bash
+npm run build
+```
+
+Runs `npm run nodes -- --check` first, so a broken graph fails the build before
+Vite starts. Then Vite builds, and `scripts/bundle.js` prints the bundle weight
+by group and the per-node panorama weight, with the 10-node walk checked against
+the 15 MB budget.
+
+`dist/` **is** the payload — copy its contents into Laravel's `public/tour/`.
+There is no nesting to unpick, because `public/` maps 1:1 onto the deploy root
+and `base` is `/tour/` in both dev and build.
+
+Panoramas are **not** in the bundle. They live in `panos/` at the project root,
+outside `publicDir`, precisely so that several hundred megabytes are never
+copied into `dist/`. Upload them to `public/tour/panos/` separately, or to
+object storage with `VITE_IMAGE_BASE_URL` pointing at it. During development a
+small Vite middleware serves `panos/` at `/tour/panos/`.
+
+Deployment files:
+
+| file | goes to |
+|---|---|
+| `deploy/.htaccess` | `public/tour/.htaccess` |
+| `deploy/routes.php` | merge into `routes/web.php` |
+
+The cache policy is deliberately split: panoramas and hashed assets immutable
+for a year, `index.html` always revalidated (it is what points at the current
+asset hashes), tour JSON on a short TTL because the tools edit it.
 
 ## Image paths
 
@@ -256,7 +370,7 @@ Everything else checks out: 52 edges, all bidirectional, and every node except
 
 ## Ground rules
 
-- `raw/` and `public/tour/panos/` are not committed.
+- `raw/` and `panos/` are not committed.
 - No `localStorage` / `sessionStorage` anywhere.
 - No CSS framework — plain CSS with custom properties.
 - Vazirmatn is self-hosted as woff2; Google Fonts is not reliably reachable.

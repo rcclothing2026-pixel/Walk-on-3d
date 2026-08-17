@@ -1,0 +1,60 @@
+# Cache policy for the 360° tour.
+#
+# Copy this to Laravel's public/tour/.htaccess alongside the built bundle.
+# LiteSpeed on cPanel reads .htaccess the same way Apache does.
+#
+# The split is deliberate:
+#
+#   panoramas + hashed assets  immutable for a year — their filenames change
+#                              when their contents do, so they can never go
+#                              stale
+#   index.html                 revalidated every time, because it is the file
+#                              that points at the current asset hashes
+#   data (nodes/brands json)   short TTL; these are edited by the tools and
+#                              a stale copy shows the wrong arrows
+#
+# Without this the panoramas are re-fetched constantly and the 10-node walk
+# budget is blown on every visit.
+
+<IfModule mod_headers.c>
+  # Panoramas. Names are stable, contents are not edited in place — when a node
+  # is re-shot, re-run the pipeline and the bytes change under the same name,
+  # so bump the ?v= query the viewer sends or clear the CDN.
+  <FilesMatch "^\d{2}-(thumb|mid|full)\.jpg$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+
+  # Vite writes a content hash into every filename under assets/.
+  <FilesMatch "\.(js|css|woff2)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+
+  # The floor plan changes only when the architect issues a revision.
+  <FilesMatch "^floorplan\.png$">
+    Header set Cache-Control "public, max-age=604800"
+  </FilesMatch>
+
+  # The entry point must never be cached hard, or a deploy will not be picked
+  # up until the browser happens to revalidate.
+  <FilesMatch "^index\.html$">
+    Header set Cache-Control "no-cache, must-revalidate"
+  </FilesMatch>
+
+  # Tour data is small and edited by the tools.
+  <FilesMatch "\.json$">
+    Header set Cache-Control "public, max-age=300"
+  </FilesMatch>
+</IfModule>
+
+# Panoramas compress badly (already JPEG) — skip them. Everything textual is
+# worth gzipping; the JS bundle is ~730 KB raw and ~190 KB gzipped.
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/css application/javascript application/json image/svg+xml
+</IfModule>
+
+# The tour is a single static page; there is no client-side router, so no
+# rewrite rules are needed. ?node=NN is a query string, which Apache passes
+# through untouched.
+
+# Do not let the directory be browsed if index.html is ever missing.
+Options -Indexes

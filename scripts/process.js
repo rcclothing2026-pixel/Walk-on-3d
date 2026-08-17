@@ -19,7 +19,7 @@
  *   npm run process -- --force              rebuild even if outputs are current
  *   npm run process -- --concurrency=4      default 2 (these are large decodes)
  *   npm run process -- --no-mozjpeg         plain libjpeg instead of mozjpeg
- *   npm run process -- --raw=raw --out=public/tour/panos
+ *   npm run process -- --raw=raw --out=panos
  */
 
 import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
@@ -357,7 +357,7 @@ function printMissing(missing, requested) {
 function parseArgs(argv) {
   const opts = {
     raw: 'raw',
-    out: 'public/tour/panos',
+    out: 'panos',
     concurrency: 2,
     force: false,
     mozjpeg: true,

@@ -209,7 +209,7 @@ function tally(length, fn) {
 function parseArgs(argv) {
   const opts = {
     pdf: 'docs/blueprint-basement-r3.pdf',
-    out: 'public/tour/floorplan.png',
+    out: 'public/floorplan.png',
     dpi: 400,
     width: 2000,
     keepRender: false,

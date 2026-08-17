@@ -94,33 +94,7 @@ async function boot() {
     mousewheelCtrlKey: false,
     loadingTxt: 'در حال بارگذاری…',
     keyboard: 'always',
-    plugins: [
-      // No `markers` config here: the virtual tour plugin owns markers per
-      // node and warns (then discards) if the plugin carries defaults.
-      MarkersPlugin,
-      [MapPlugin, mapConfig()],
-      [
-        VirtualTourPlugin,
-        {
-          positionMode: 'manual',
-          renderMode: '3d',
-          transitionOptions: reducedMotion
-            ? { showLoader: true, speed: 0, fadeIn: false, rotation: false }
-            : { showLoader: true, speed: '12rpm', fadeIn: true, rotation: true },
-          preload: true,
-          // The map belongs to the virtual tour plugin, not the map plugin:
-          // it is what sets the image and maintains a hotspot per node. The
-          // map plugin only gets presentation options.
-          map: { imageUrl: floorplanUrl(), recenter: true },
-          // Valid keys are image / element / className / size / style — the
-          // colour-ish names other PSV plugins use are silently ignored here.
-          arrowStyle: {
-            size: { width: 88, height: 88 },
-            className: 'tour-arrow',
-          },
-        },
-      ],
-    ],
+    plugins: buildPlugins(),
   });
 
   const tourPlugin = viewer.getPlugin(VirtualTourPlugin);
@@ -157,6 +131,47 @@ async function boot() {
   // Expose for debugging from the console; harmless in production and
   // invaluable when something looks wrong on a real device.
   window.__tour = { viewer, tourPlugin, mapPlugin, quality, gyroscope, data: tour };
+}
+
+/**
+ * The plugin set.
+ *
+ * The map plugin is left out entirely when no node has been placed on the
+ * floor plan, rather than loaded and hidden. Hiding does not hold: the plugin
+ * calls show() on itself once its image finishes loading, which lands after
+ * our own hide() and puts an undrawable map back on screen. Skipping it also
+ * saves fetching the floor plan for nothing.
+ */
+function buildPlugins() {
+  const tourConfig = {
+    positionMode: 'manual',
+    renderMode: '3d',
+    transitionOptions: reducedMotion
+      ? { showLoader: true, speed: 0, fadeIn: false, rotation: false }
+      : { showLoader: true, speed: '12rpm', fadeIn: true, rotation: true },
+    preload: true,
+    // Valid keys are image / element / className / size / style — the
+    // colour-ish names other PSV plugins use are silently ignored here.
+    arrowStyle: {
+      size: { width: 88, height: 88 },
+      className: 'tour-arrow',
+    },
+  };
+
+  // No `markers` config: the virtual tour plugin owns markers per node and
+  // warns (then discards) if the markers plugin carries defaults.
+  const plugins = [MarkersPlugin];
+
+  if (mapUsable) {
+    // The map belongs to the virtual tour plugin, not the map plugin: it is
+    // what sets the image and maintains a hotspot per node. The map plugin
+    // only gets presentation options.
+    tourConfig.map = { imageUrl: floorplanUrl(), recenter: true };
+    plugins.push([MapPlugin, mapConfig()]);
+  }
+
+  plugins.push([VirtualTourPlugin, tourConfig]);
+  return plugins;
 }
 
 /**

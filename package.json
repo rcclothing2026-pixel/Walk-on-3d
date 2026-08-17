@@ -9,8 +9,8 @@
     "floorplan": "node scripts/floorplan.js",
     "nodes": "node scripts/build-nodes.js",
     "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "build": "npm run nodes -- --check && vite build && node scripts/bundle.js",
+    "preview": "vite preview --outDir dist"
   },
   "dependencies": {
     "@photo-sphere-viewer/core": "^5.15.1",
