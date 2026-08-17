@@ -29,6 +29,7 @@ import './styles.css';
 import { assetUrl, floorplanUrl, panoUrl } from './lib/paths.js';
 import { QualityManager, loadManifest } from './lib/quality.js';
 import { BrandPanel } from './lib/panel.js';
+import { Gyroscope, registerControls } from './lib/controls.js';
 
 /** Nodes 1–3 are the staircase descent; the map reads badly at the plan's edge. */
 const MAP_HIDDEN_UNTIL_NODE = 4;
@@ -74,17 +75,17 @@ async function boot() {
     );
   }
 
+  // Buttons must exist before construction: the navbar is built from this
+  // array while the viewer is being created.
+  const controls = registerControls();
+
   const viewer = new Viewer({
     container: el.viewer,
     // The virtual tour plugin owns the panorama; giving one here would make
     // the first node load twice.
     adapter: undefined,
     caption: '',
-    // Only built-in button names are valid here; the reset-view and gyroscope
-    // controls are added as custom buttons in Phase 5. `caption` is left out
-    // deliberately — the node name is already shown in our own pill, and the
-    // navbar version would duplicate it.
-    navbar: ['zoom', 'move', 'fullscreen'],
+    navbar: buildNavbar(controls),
     defaultZoomLvl: 40,
     minFov: 25,
     maxFov: 100,
@@ -128,6 +129,11 @@ async function boot() {
   const panel = new BrandPanel();
   const quality = new QualityManager({ viewer, manifest });
 
+  // Off by default: following the phone unannounced disorients people.
+  const gyroscope = new Gyroscope(viewer, {
+    onChange: (on) => document.body.classList.toggle('gyro-on', on),
+  });
+
   wireLoader(viewer);
   wireQuality(viewer, quality);
 
@@ -150,7 +156,34 @@ async function boot() {
 
   // Expose for debugging from the console; harmless in production and
   // invaluable when something looks wrong on a real device.
-  window.__tour = { viewer, tourPlugin, mapPlugin, quality, data: tour };
+  window.__tour = { viewer, tourPlugin, mapPlugin, quality, gyroscope, data: tour };
+}
+
+/**
+ * The navbar, which differs by input type.
+ *
+ * Only built-in names are valid as strings; reset and gyroscope are custom
+ * button objects. `caption` is left out deliberately — the node name is already
+ * in our own pill and the navbar version would duplicate it.
+ *
+ * On touch the four `move` arrows are dropped: you drag to look, so they earn
+ * nothing, and at 375px eleven buttons overflow into a collapsed menu that
+ * buries the controls that do matter.
+ *
+ * The gyroscope button is gated on a coarse pointer rather than on
+ * DeviceOrientationEvent alone — desktop Chrome defines that API but has no
+ * sensor behind it, which would leave a dead button on the bar.
+ */
+function buildNavbar(controls) {
+  const touch = matchMedia('(pointer: coarse)').matches;
+
+  return [
+    'zoom',
+    ...(touch ? [] : ['move']),
+    controls.reset,
+    ...(touch && Gyroscope.supported ? [controls.gyroscope] : []),
+    'fullscreen',
+  ];
 }
 
 /* ------------------------------------------------------------------ *

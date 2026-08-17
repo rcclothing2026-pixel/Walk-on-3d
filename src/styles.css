@@ -388,3 +388,40 @@ body {
 .tour-arrow:hover {
   filter: drop-shadow(0 0 10px rgba(255, 213, 74, 0.9));
 }
+
+/* ---------- custom navbar buttons ---------- */
+
+/*
+ * Button icons must not be hit-test targets. If pointerdown lands on the button
+ * but pointerup lands on an inner <svg>, the browser dispatches `click` on
+ * their common ancestor and the button's own listener never fires.
+ */
+.psv-button svg,
+.psv-button svg * {
+  pointer-events: none;
+}
+
+.tour-btn svg {
+  display: block;
+}
+
+/* The gyroscope button lights up while it is driving the view, so the state
+   is visible without opening a menu. */
+.gyro-on .psv-button[title*='ژیروسکوپ'] {
+  color: var(--accent);
+}
+
+/* ---------- touch ---------- */
+
+@media (pointer: coarse) {
+  /* Bigger hit areas on touch, where precision is worse. */
+  .brand-pin {
+    width: 52px;
+    height: 52px;
+  }
+
+  .psv-button {
+    min-width: 48px;
+    height: 48px !important;
+  }
+}
