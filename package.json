@@ -1,0 +1,24 @@
+{
+  "name": "walk-on-3d",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "360° virtual tour of a historic courtyard complex — static bundle for Laravel public/tour/",
+  "scripts": {
+    "process": "node scripts/process.js",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@photo-sphere-viewer/core": "^5.15.1",
+    "@photo-sphere-viewer/map-plugin": "^5.15.1",
+    "@photo-sphere-viewer/markers-plugin": "^5.15.1",
+    "@photo-sphere-viewer/virtual-tour-plugin": "^5.15.1",
+    "three": "^0.185.1"
+  },
+  "devDependencies": {
+    "sharp": "^0.35.3",
+    "vite": "^7.1.7"
+  }
+}
