@@ -20,6 +20,10 @@ const el = {
   cards: document.getElementById('cards'),
   rows: document.getElementById('rows'),
   refresh: document.getElementById('refresh'),
+  addNode: document.getElementById('add-node'),
+  tray: document.getElementById('tray'),
+  trayStrip: document.getElementById('tray-strip'),
+  trayCount: document.getElementById('tray-count'),
   log: document.getElementById('log'),
   logTitle: document.getElementById('log-title'),
   logBody: document.getElementById('log-body'),
@@ -28,11 +32,13 @@ const el = {
 };
 
 let state = null;
+let photos = null;
 
 start();
 
 async function start() {
   el.refresh.addEventListener('click', refresh);
+  el.addNode.addEventListener('click', addNode);
   el.logClose.addEventListener('click', () => (el.log.hidden = true));
 
   window.addEventListener('keydown', (event) => {
@@ -48,10 +54,14 @@ async function refresh() {
   el.refresh.disabled = true;
 
   try {
-    const response = await fetch(`${API}/state`);
-    if (!response.ok) throw new Error(String(response.status));
+    const [stateRes, photosRes] = await Promise.all([
+      fetch(`${API}/state`),
+      fetch(`${API}/photos`),
+    ]);
+    if (!stateRes.ok) throw new Error(String(stateRes.status));
 
-    state = await response.json();
+    state = await stateRes.json();
+    photos = photosRes.ok ? await photosRes.json() : { photos: [], unassigned: 0 };
     render();
     hideStatus();
   } catch (err) {
@@ -81,7 +91,44 @@ function render() {
     `${totals.mapped}/${totals.nodes} on the map`;
 
   renderCards(totals);
+  renderTray();
   renderRows();
+}
+
+/**
+ * Photos that no node claims.
+ *
+ * With 42 photographs against 43 names against 44 shooting points, the two
+ * sequences do not line up, and the mismatch is only resolvable by looking at
+ * the pictures. Anything the numeric fallback could not place shows up here to
+ * be dragged onto the row it belongs to.
+ */
+function renderTray() {
+  const loose = photos.photos.filter((p) => !p.node);
+
+  el.tray.hidden = loose.length === 0;
+  el.trayCount.textContent = `${loose.length} of ${photos.photos.length}`;
+
+  el.trayStrip.innerHTML = loose
+    .map(
+      (photo) => `
+      <figure class="chip" draggable="true" data-file="${escapeHtml(photo.file)}">
+        <img src="${API}/preview?file=${encodeURIComponent(photo.file)}" alt="" loading="lazy" />
+        <figcaption>${escapeHtml(photo.file)}</figcaption>
+      </figure>`,
+    )
+    .join('');
+
+  for (const chip of el.trayStrip.children) wireDragSource(chip);
+}
+
+function wireDragSource(node) {
+  node.addEventListener('dragstart', (event) => {
+    event.dataTransfer.setData('text/plain', node.dataset.file);
+    event.dataTransfer.effectAllowed = 'move';
+    node.classList.add('is-dragging');
+  });
+  node.addEventListener('dragend', () => node.classList.remove('is-dragging'));
 }
 
 /**
@@ -151,14 +198,25 @@ function renderRows() {
   el.rows.innerHTML = state.nodes
     .map(
       (node) => `
-      <tr class="${node.raw ? '' : 'is-missing'}">
+      <tr data-node="${node.node}" class="${node.raw ? '' : 'is-missing'}">
         <td class="mono">${node.id}</td>
-        <td dir="rtl" class="grid__name">
-          ${escapeHtml(node.name)}
+        <td class="grid__photo" data-drop="${node.node}">
+          ${
+            node.source
+              ? `<img src="${API}/preview?file=${encodeURIComponent(node.source)}"
+                      alt="" loading="lazy" title="${escapeHtml(node.source)}" />
+                 <span class="grid__file ${node.assigned ? 'is-explicit' : ''}">
+                   ${escapeHtml(node.source)}
+                 </span>`
+              : '<span class="grid__empty">drop a photo</span>'
+          }
+        </td>
+        <td class="grid__name">
+          <input class="name-input" dir="rtl" value="${escapeHtml(node.name)}"
+                 data-rename="${node.node}" />
           ${node.unconfirmed ? '<span class="tag tag--warn">?</span>' : ''}
         </td>
         <td class="muted">${node.type}</td>
-        <td>${tick(node.raw)}</td>
         <td>${tick(node.processed)}</td>
         <td>${tick(node.aligned)}${node.aligned ? `<span class="mono muted"> ${node.pan}°</span>` : ''}</td>
         <td class="${node.linksPicked === node.links ? 'ok' : 'muted'} mono">
@@ -173,6 +231,8 @@ function renderRows() {
           <button class="btn btn--tiny" data-build="${node.node}"${node.raw ? '' : ' disabled'}>
             rebuild
           </button>
+          <button class="btn btn--tiny btn--danger" data-remove="${node.node}"
+                  title="Remove this node from the roster">&times;</button>
         </td>
       </tr>`,
     )
@@ -181,6 +241,88 @@ function renderRows() {
   for (const button of el.rows.querySelectorAll('[data-build]')) {
     button.addEventListener('click', () => processNode(Number(button.dataset.build)));
   }
+  for (const button of el.rows.querySelectorAll('[data-remove]')) {
+    button.addEventListener('click', () => removeNode(Number(button.dataset.remove)));
+  }
+  for (const input of el.rows.querySelectorAll('[data-rename]')) {
+    wireRename(input);
+  }
+  for (const cell of el.rows.querySelectorAll('[data-drop]')) {
+    wireDropTarget(cell);
+  }
+}
+
+/** Commits on blur or Enter; Escape puts the old value back. */
+function wireRename(input) {
+  const original = input.value;
+
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') input.blur();
+    if (event.key === 'Escape') {
+      input.value = original;
+      input.blur();
+    }
+  });
+
+  input.addEventListener('blur', async () => {
+    const name = input.value.trim();
+    if (!name || name === original) {
+      input.value = original || name;
+      return;
+    }
+
+    const result = await post('/rename', { node: Number(input.dataset.rename), name });
+    if (result.error) {
+      input.value = original;
+      openLog('Rename failed', result.error);
+      return;
+    }
+    await refresh();
+  });
+}
+
+/**
+ * A row accepts a photo dragged from the tray, from another row, or straight
+ * from Finder.
+ *
+ * A file dragged in from outside is matched by name against the raw folder —
+ * the browser never reveals its real path, and copying a 20 MB panorama in
+ * would duplicate what is already there.
+ */
+function wireDropTarget(cell) {
+  const node = Number(cell.dataset.drop);
+
+  cell.addEventListener('dragover', (event) => {
+    event.preventDefault();
+    cell.classList.add('is-over');
+  });
+  cell.addEventListener('dragleave', () => cell.classList.remove('is-over'));
+
+  cell.addEventListener('drop', async (event) => {
+    event.preventDefault();
+    cell.classList.remove('is-over');
+
+    const dropped =
+      event.dataTransfer.getData('text/plain') || event.dataTransfer.files?.[0]?.name;
+    if (!dropped) return;
+
+    const result = await post('/assign', { node, file: dropped });
+    if (result.error) {
+      openLog('Could not assign that photo', result.error);
+      return;
+    }
+    await refresh();
+  });
+
+  // Rows are drag sources too, so a photo can be moved from one node to another.
+  const img = cell.querySelector('img');
+  if (!img) return;
+
+  cell.draggable = true;
+  cell.addEventListener('dragstart', (event) => {
+    event.dataTransfer.setData('text/plain', img.title);
+    event.dataTransfer.effectAllowed = 'move';
+  });
 }
 
 /* ------------------------------------------------------------------ *
@@ -232,6 +374,60 @@ async function processAll() {
 
   openLog('Done', `Built ${pending.length} node(s).`);
   await refresh();
+}
+
+/** Appends a node to the roster. */
+async function addNode() {
+  const result = await post('/add-node', {});
+  if (result.error) {
+    openLog('Could not add a node', result.error);
+    return;
+  }
+
+  await refresh();
+  // The new row is at the bottom; take the operator there.
+  el.rows.lastElementChild?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  el.rows.lastElementChild?.querySelector('.name-input')?.focus();
+}
+
+/**
+ * Removes a node from the roster, together with its alignment, arrows and map
+ * point.
+ *
+ * The remaining nodes keep their numbers. Renumbering would look tidier but
+ * would silently reattach every recorded value to a different panorama.
+ */
+async function removeNode(node) {
+  const entry = state.nodes.find((n) => n.node === node);
+  const done = [
+    entry?.aligned && 'its alignment',
+    entry?.linksPicked && `${entry.linksPicked} placed arrow(s)`,
+    entry?.map && 'its map point',
+  ].filter(Boolean);
+
+  const warning = done.length ? `\n\nThis also discards ${done.join(', ')}.` : '';
+  if (!window.confirm(`Remove node ${entry?.id ?? node} — ${entry?.name ?? ''}?${warning}`)) return;
+
+  const result = await post('/remove-node', { node });
+  if (result.error) {
+    openLog('Could not remove that node', result.error);
+    return;
+  }
+
+  await refresh();
+}
+
+async function post(endpoint, payload) {
+  try {
+    const response = await fetch(`${API}${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return await response.json();
+  } catch (err) {
+    return { error: err.message };
+  }
 }
 
 /* ------------------------------------------------------------------ *

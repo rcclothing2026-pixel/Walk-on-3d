@@ -66,6 +66,7 @@ let current = null;
 let activeIndex = 0;
 let viewer = null;
 let markers = null;
+let placementEnabled = true;
 
 start();
 
@@ -131,6 +132,7 @@ async function openNode(node) {
       // constructor returns.
       viewer.addEventListener('panorama-loaded', () => {
         hideStatus();
+        setPlacementEnabled(true);
         syncMarkers();
       });
       window.__viewer = viewer; // dev handle
@@ -142,6 +144,7 @@ async function openNode(node) {
       });
     }
     hideStatus();
+    setPlacementEnabled(true);
   } catch (err) {
     showMissingPanorama(node, err);
   }
@@ -149,7 +152,22 @@ async function openNode(node) {
   syncMarkers();
 }
 
+/**
+ * Blocks arrow placement while the current node has no panorama.
+ *
+ * PSV keeps the previous sphere on screen when a load fails, so without this
+ * you would be clicking arrow positions onto the wrong node's image.
+ */
+function setPlacementEnabled(enabled) {
+  placementEnabled = enabled;
+  for (const control of [el.pitch, el.pitchValue, el.yawValue, el.resetLink, el.resetNode]) {
+    control.disabled = !enabled;
+  }
+  document.body.classList.toggle('is-blocked', !enabled);
+}
+
 function showMissingPanorama(node, err) {
+  setPlacementEnabled(false);
   showStatus(
     `<strong>Node ${pad(node)} has no panorama yet.</strong><br />` +
       `Expected <code>${panoUrl(node, RENDITION)}</code><br /><br />` +
@@ -163,7 +181,7 @@ function showMissingPanorama(node, err) {
 /** A click on the panorama places the active link's arrow. */
 function onPanoramaClick({ data }) {
   const link = activeLink();
-  if (!link || data.rightclick) return;
+  if (!link || data.rightclick || !placementEnabled) return;
 
   link.yaw = round(norm360(rad2deg(data.yaw)));
   link.pitch = round(rad2deg(data.pitch));

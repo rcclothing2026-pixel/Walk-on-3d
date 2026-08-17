@@ -121,7 +121,10 @@ async function openNode(node) {
       viewer.addEventListener('panorama-error', (event) =>
         showMissingPanorama(current, event.error),
       );
-      viewer.addEventListener('panorama-loaded', hideStatus);
+      viewer.addEventListener('panorama-loaded', () => {
+        hideStatus();
+        setControlsEnabled(true);
+      });
     } else {
       await viewer.setPanorama(url, {
         sphereCorrection: { pan: deg(pan) },
@@ -130,6 +133,7 @@ async function openNode(node) {
       });
     }
     hideStatus();
+    setControlsEnabled(true);
   } catch (err) {
     showMissingPanorama(node, err);
     return;
@@ -138,8 +142,26 @@ async function openNode(node) {
   syncCompass();
 }
 
+/**
+ * Locks the controls while the current node has no panorama.
+ *
+ * Photo Sphere Viewer leaves the previous sphere on screen when a load fails,
+ * so without this you can sit on node 07, be looking at node 06's image, and
+ * save an alignment that means nothing.
+ */
+function setControlsEnabled(enabled) {
+  for (const control of [
+    el.pan, el.panValue, el.nudgeUp, el.nudgeDown,
+    el.save, el.clear, el.resetView,
+  ]) {
+    control.disabled = !enabled;
+  }
+  document.body.classList.toggle('is-blocked', !enabled);
+}
+
 function showMissingPanorama(node, err) {
   const file = panoUrl(node, RENDITION);
+  setControlsEnabled(false);
   showStatus(
     `<strong>Node ${pad(node)} has no panorama yet.</strong><br />` +
       `Expected <code>${file}</code><br /><br />` +
@@ -316,7 +338,7 @@ function wireUnloadGuard() {
 }
 
 function setPan(value) {
-  if (!Number.isFinite(value)) return;
+  if (!Number.isFinite(value) || el.pan.disabled) return;
   pan = clampPan(round(value));
   dirty = true;
   syncPanInputs();
@@ -351,6 +373,11 @@ function confirmDiscard() {
 }
 
 function saveAndAdvance() {
+  if (el.save.disabled) {
+    toast('This node has no panorama — nothing to align', 'error');
+    return;
+  }
+
   saved.set(current, pan);
   dirty = false;
   syncProgress();

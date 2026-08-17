@@ -60,7 +60,7 @@ async function main() {
     return checkOnDisk(previous, roster);
   }
 
-  const adj = adjacency();
+  const adj = adjacency(roster);
   const nodes = {};
   let picked = 0;
   let auto = 0;

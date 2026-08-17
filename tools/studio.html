@@ -14,6 +14,7 @@
       </div>
 
       <div class="group">
+        <button id="add-node" class="btn" title="Append a node to the roster">+ Node</button>
         <a class="btn" href="/tour/" target="_blank" rel="noopener">Open tour ↗</a>
         <button id="refresh" class="btn" title="Re-read the state from disk (R)">Refresh</button>
       </div>
@@ -22,14 +23,22 @@
     <main class="studio__body">
       <section class="cards" id="cards"></section>
 
+      <section class="tray" id="tray" hidden>
+        <div class="tray__head">
+          <span>Unassigned photos — drag one onto a row</span>
+          <span id="tray-count" class="progress"></span>
+        </div>
+        <div class="tray__strip" id="tray-strip"></div>
+      </section>
+
       <section class="studio__table">
         <table class="grid">
           <thead>
             <tr>
               <th>#</th>
+              <th title="drag a photo here to assign it">Photo</th>
               <th>Name</th>
               <th>Type</th>
-              <th title="raw/NN.jpg present">Photo</th>
               <th title="renditions built by npm run process">Built</th>
               <th title="sphereCorrection.pan recorded">Aligned</th>
               <th title="arrows picked / total links">Arrows</th>

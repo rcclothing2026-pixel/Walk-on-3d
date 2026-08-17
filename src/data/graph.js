@@ -65,8 +65,13 @@ export const SINGLE_LINK_PENDING = new Set([1, 7, 10, 13, 15, 17, 18, 20, 25, 28
 
 /**
  * Builds the undirected adjacency map: node number → sorted array of neighbours.
+ *
+ * Pass the roster to drop edges that point at nodes which no longer exist. The
+ * roster in names.json is editable from the studio, so the graph transcribed
+ * here can legitimately fall out of date with it; a removed node should leave a
+ * reported gap rather than failing the build with a dangling link.
  */
-export function adjacency() {
+export function adjacency(roster = null) {
   const adj = new Map();
   const link = (a, b) => {
     if (a === b) return;
@@ -86,11 +91,22 @@ export function adjacency() {
   }
   for (const run of CHAINS) chain(run);
 
-  return new Map(
-    [...adj.entries()]
-      .sort(([a], [b]) => a - b)
-      .map(([node, set]) => [node, [...set].sort((a, b) => a - b)]),
-  );
+  const known = roster ? new Set(roster) : null;
+  const entries = [...adj.entries()]
+    .filter(([node]) => !known || known.has(node))
+    .sort(([a], [b]) => a - b)
+    .map(([node, set]) => [
+      node,
+      [...set].filter((n) => !known || known.has(n)).sort((a, b) => a - b),
+    ]);
+
+  // Nodes added to the roster but not yet wired into the graph above.
+  if (known) {
+    for (const node of known) if (!adj.has(node)) entries.push([node, []]);
+    entries.sort(([a], [b]) => a - b);
+  }
+
+  return new Map(entries);
 }
 
 /**

@@ -14,10 +14,34 @@
  * browser bundle.
  */
 
-import { readdir, stat } from 'node:fs/promises';
+import { readFile, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const EXTENSIONS = ['jpg', 'jpeg', 'JPG', 'JPEG'];
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const SOURCES_JSON = path.join(ROOT, 'src/data/sources.json');
+
+/**
+ * Explicit node → filename assignments, made in the studio.
+ *
+ * The photographs do not necessarily arrive numbered in tour order — the count
+ * alone (42 photos against 43 nodes against 44 shooting points) says the two
+ * sequences disagree somewhere. Rather than guessing an offset, this records
+ * which file belongs to which node, decided by looking at the pictures.
+ *
+ * A node with no entry falls back to matching on the number in the filename,
+ * so an untouched project still works.
+ */
+export async function loadSources() {
+  try {
+    const parsed = JSON.parse(await readFile(SOURCES_JSON, 'utf8'));
+    return parsed?.sources ?? {};
+  } catch {
+    return {};
+  }
+}
 
 /** Candidate filenames for a node, most conventional first. */
 export function rawCandidates(node) {
@@ -39,8 +63,34 @@ export function rawCandidates(node) {
  * @param {number} node
  * @returns {Promise<string|null>} absolute path
  */
-export async function findRaw(rawDir, node) {
+export async function findRaw(rawDir, node, sources = null) {
+  const assigned = (sources ?? (await loadSources()))[String(node).padStart(2, '0')];
+
+  // An explicit assignment wins outright. If it names a file that has since
+  // been moved or renamed, that is a mistake worth surfacing rather than
+  // silently papering over with a numeric guess.
+  if (assigned) {
+    const target = path.join(rawDir, path.basename(assigned));
+    try {
+      return (await stat(target)).isFile() ? target : null;
+    } catch {
+      return null;
+    }
+  }
+
+  // Files another node has explicitly claimed are off limits to the numeric
+  // fallback. Without this, assigning 1.jpg to node 12 would leave node 01
+  // still matching it by name, and the same panorama would be built and shown
+  // in two places.
+  const taken = new Set(
+    Object.entries(sources ?? {})
+      .filter(([id]) => id !== String(node).padStart(2, '0'))
+      .map(([, file]) => path.basename(file)),
+  );
+
   for (const name of rawCandidates(node)) {
+    if (taken.has(name)) continue;
+
     const candidate = path.join(rawDir, name);
     try {
       if ((await stat(candidate)).isFile()) return candidate;
@@ -50,6 +100,22 @@ export async function findRaw(rawDir, node) {
   }
 
   return null;
+}
+
+/** Every numbered photo in the directory, sorted naturally. */
+export async function listRaw(rawDir) {
+  try {
+    const entries = await readdir(rawDir);
+    return entries
+      .filter((entry) => /\.(jpe?g)$/i.test(entry) && !entry.startsWith('.'))
+      .sort((a, b) => {
+        const na = Number(a.match(/\d+/)?.[0] ?? Infinity);
+        const nb = Number(b.match(/\d+/)?.[0] ?? Infinity);
+        return na === nb ? a.localeCompare(b) : na - nb;
+      });
+  } catch {
+    return [];
+  }
 }
 
 /**
