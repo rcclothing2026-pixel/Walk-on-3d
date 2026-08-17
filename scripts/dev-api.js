@@ -30,6 +30,7 @@ import { fileURLToPath } from 'node:url';
 
 import { RENDITION_ORDER, nodeId, panoFilename } from '../src/lib/paths.js';
 import { nodeInfo, nodeNumbers } from '../src/lib/nodes.js';
+import { findRaw } from './raw.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DATA = path.join(ROOT, 'src/data');
@@ -106,7 +107,8 @@ async function readState() {
         name: info.name,
         type: info.type,
         unconfirmed: info.unconfirmed,
-        raw: await exists(path.join(RAW, `${id}.jpg`)),
+        // Same tolerant lookup the pipeline uses: 7.jpg counts as node 7.
+        raw: Boolean(await findRaw(RAW, n)),
         renditions,
         processed: RENDITION_ORDER.every((r) => renditions[r]),
         // A pan of exactly 0 with no entry means "never visited", which is not

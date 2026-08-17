@@ -2,7 +2,7 @@
 /**
  * Phase 1 — image pipeline.
  *
- * Reads raw/NN.jpg (equirectangular, 11904×5952 out of Insta360 Studio) and
+ * Reads the numbered source photos (equirectangular, out of Insta360 Studio) and
  * emits three renditions per node into public/tour/panos/:
  *
  *   NN-full.jpg   8192×4096  q82   fetched only when the user zooms in
@@ -22,7 +22,7 @@
  *   npm run process -- --raw=raw --out=panos
  */
 
-import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import process from 'node:process';
@@ -35,6 +35,7 @@ import {
   panoFilename,
 } from '../src/lib/paths.js';
 import { nodeNumbers, nodeRange } from '../src/lib/nodes.js';
+import { findRaw, hasRawFiles } from './raw.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -82,12 +83,13 @@ async function main() {
   const warnings = [];
 
   await mapWithConcurrency(nodes, opts.concurrency, async (node) => {
-    const source = path.join(rawDir, `${nodeId(node)}.jpg`);
-    const sourceStat = await statOrNull(source);
+    // Accepts 07.jpg, 7.jpg, 7.JPEG and so on — the number is what matters.
+    const source = await findRaw(rawDir, node);
+    const sourceStat = source ? await statOrNull(source) : null;
 
     if (!sourceStat) {
       missing.push(node);
-      console.log(`  ${nodeId(node)}  ${dim('— no raw/' + nodeId(node) + '.jpg')}`);
+      console.log(`  ${nodeId(node)}  ${dim(`— no ${nodeId(node)}.jpg in ${path.basename(rawDir)}/`)}`);
       return;
     }
 
@@ -287,11 +289,11 @@ function printTable(results) {
     return;
   }
 
+  // Columns follow RENDITION_ORDER, so dropping or adding a rendition does not
+  // leave a stale column behind.
   const rows = results.map((r) => [
     nodeId(r.node),
-    formatBytes(r.sizes.thumb),
-    formatBytes(r.sizes.mid),
-    formatBytes(r.sizes.full),
+    ...RENDITION_ORDER.map((q) => formatBytes(r.sizes[q])),
     formatBytes(r.total),
   ]);
 
@@ -301,12 +303,10 @@ function printTable(results) {
   );
   const grandTotal = sum(results.map((r) => r.total));
 
-  const header = ['node', 'thumb', 'mid', 'full', 'total'];
+  const header = ['node', ...RENDITION_ORDER, 'total'];
   const footer = [
     'ALL',
-    formatBytes(totals.thumb),
-    formatBytes(totals.mid),
-    formatBytes(totals.full),
+    ...RENDITION_ORDER.map((q) => formatBytes(totals[q])),
     formatBytes(grandTotal),
   ];
 
@@ -329,7 +329,10 @@ function printTable(results) {
       ? green(`under the ${formatBytes(WALK_BUDGET_BYTES)} budget`)
       : red(`OVER the ${formatBytes(WALK_BUDGET_BYTES)} budget`);
 
-  console.log(`\n  average per node   ${formatBytes(grandTotal / results.length)} (all three)`);
+  console.log(
+    `\n  average per node   ${formatBytes(grandTotal / results.length)}` +
+      ` (${RENDITION_ORDER.join(' + ')})`,
+  );
   console.log(`  average mid        ${formatBytes(avgMid)}`);
   console.log(`  ${WALK_NODES}-node walk (mid) ${formatBytes(walk)} — ${verdict}\n`);
 }
@@ -347,7 +350,7 @@ function printMissing(missing, requested) {
     red(`${missing.length} of ${requested} raw file(s) missing: `) +
       missing.map(nodeId).join(', '),
   );
-  console.log(dim('  drop them into raw/ as NN.jpg and re-run.\n'));
+  console.log(dim('  add them to the raw directory, numbered, and re-run.\n'));
 }
 
 /* ------------------------------------------------------------------ *
@@ -441,12 +444,12 @@ async function assertRawDir(rawDir) {
     throw new Error(`raw directory not found: ${rawDir}`);
   }
 
-  const entries = await readdir(rawDir);
-  if (!entries.some((e) => /^\d{2}\.jpg$/i.test(e))) {
+  if (!(await hasRawFiles(rawDir))) {
     throw new Error(
-      `${rawDir} contains no NN.jpg files.\n` +
+      `${rawDir} contains no numbered photos.\n` +
         `  Export from Insta360 Studio as "Export 360 Photo (not reframed)" and\n` +
-        `  name them 01.jpg … ${nodeId(LAST_NODE)}.jpg in route order.`,
+        `  number them 1 … ${LAST_NODE} in route order. Zero-padding is optional:\n` +
+        `  7.jpg and 07.jpg are both read as node 7.`,
     );
   }
 }
