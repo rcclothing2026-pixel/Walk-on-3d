@@ -27,6 +27,7 @@ import '@photo-sphere-viewer/core/index.css';
 
 import { panoUrl } from '../src/lib/paths.js';
 import { nodeInfo, nodeNumbers } from '../src/lib/nodes.js';
+import { downloadJson, saveData } from './save.js';
 
 const NODES = nodeNumbers();
 const ALIGNMENT_PATH = '/src/data/alignment.json';
@@ -262,7 +263,7 @@ function wireControls() {
   el.clear.addEventListener('click', clearCurrent);
 
   el.copy.addEventListener('click', copyJson);
-  el.download.addEventListener('click', downloadJson);
+  el.download.addEventListener('click', persist);
 }
 
 function wireKeyboard() {
@@ -381,16 +382,16 @@ function clearCurrent() {
  * which nodes are still untouched. Nodes never saved are marked so they cannot
  * be mistaken for a deliberate 0°.
  */
-function buildJson() {
+function buildObject() {
   const out = {};
   for (const n of NODES) {
     out[pad(n)] = saved.has(n) ? { pan: saved.get(n) } : { pan: 0, todo: true };
   }
-  return `${JSON.stringify(out, null, 2)}\n`;
+  return out;
 }
 
 async function copyJson() {
-  const json = buildJson();
+  const json = `${JSON.stringify(buildObject(), null, 2)}\n`;
   try {
     await navigator.clipboard.writeText(json);
     toast(`Copied ${saved.size}/${NODES.length} nodes`);
@@ -401,17 +402,19 @@ async function copyJson() {
   }
 }
 
-function downloadJson() {
-  const blob = new Blob([buildJson()], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
+/** Writes straight to src/data/alignment.json via the studio API. */
+async function persist() {
+  const result = await saveData('alignment', buildObject());
 
-  a.href = url;
-  a.download = 'alignment.json';
-  a.click();
+  if (result.ok) {
+    dirty = false;
+    syncProgress();
+    toast(`Saved to ${result.saved}`);
+    return;
+  }
 
-  URL.revokeObjectURL(url);
-  toast('Save it to src/data/alignment.json');
+  downloadJson('alignment.json', buildObject());
+  toast('API unreachable — downloaded instead', 'error');
 }
 
 /** Picks up a previous session's work so alignment can be done across sittings. */

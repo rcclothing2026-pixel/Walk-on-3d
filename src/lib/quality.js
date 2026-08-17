@@ -10,11 +10,15 @@
  * On a connection slower than ~2 Mbps the tour stays on `mid` permanently:
  * an 8192px fetch on a slow link costs more than the sharpness is worth.
  *
+ * `full` is currently not built at all (see RENDITION_ORDER in paths.js), so
+ * the upgrade path is dormant. The logic is kept because re-enabling the
+ * rendition is a one-line change and this is where the policy belongs.
+ *
  * This lives in one module rather than as conditionals sprinkled through the
  * viewer so the policy can be read, and changed, in one place.
  */
 
-import { RENDITIONS, panoUrl } from './paths.js';
+import { RENDITIONS, RENDITION_ORDER, panoUrl } from './paths.js';
 
 /** Below this downlink estimate (Mbps) we never fetch `full`. */
 export const SLOW_CONNECTION_MBPS = 2;
@@ -100,6 +104,9 @@ export class QualityManager {
    * cooling down from the last upgrade.
    */
   async considerUpgrade(zoomLevel) {
+    // `full` is not currently emitted (see RENDITION_ORDER); with nothing to
+    // upgrade to, this is a no-op rather than a broken fetch.
+    if (!RENDITION_ORDER.includes('full')) return false;
     if (this.#node === null || this.#busy) return false;
     if (this.isUpgraded(this.#node)) return false;
     if (zoomLevel < FULL_ZOOM_THRESHOLD) return false;
@@ -153,7 +160,11 @@ export class QualityManager {
       effectiveType: navigator.connection?.effectiveType ?? 'unknown',
       downlink: navigator.connection?.downlink ?? null,
       upgraded: [...this.#upgraded],
-      policy: slow ? 'mid only (slow connection)' : `full above ${FULL_ZOOM_THRESHOLD}% zoom`,
+      policy: !RENDITION_ORDER.includes('full')
+        ? 'mid only (full-resolution rendition not built)'
+        : slow
+          ? 'mid only (slow connection)'
+          : `full above ${FULL_ZOOM_THRESHOLD}% zoom`,
       renditions: RENDITIONS,
     };
   }

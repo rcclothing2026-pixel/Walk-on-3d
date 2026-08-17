@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { defineConfig } from 'vite';
 
+import { devApi } from './scripts/dev-api.js';
+
 /**
  * The tour is served from Laravel's `public/tour/`, so `base` is '/tour/' in
  * both dev and build. Keeping the same base in both means a path that works in
@@ -26,7 +28,9 @@ export default defineConfig({
     emptyOutDir: true,
     assetsInlineLimit: 0,
   },
-  plugins: [servePanoramas()],
+  // Both are dev-only (`apply: 'serve'`): the API writes to disk and spawns the
+  // image pipeline, so it must never be part of a build.
+  plugins: [servePanoramas(), devApi()],
 });
 
 /** Serves ./panos at /tour/panos/ during development only. */

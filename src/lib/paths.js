@@ -12,7 +12,7 @@
 import { IMAGE_BASE_URL } from '../config.js';
 
 /**
- * The three renditions emitted per node, smallest first.
+ * The catalogue of renditions.
  *
  * Every panorama is equirectangular, so width is always exactly 2 × height.
  * `quality` is the JPEG quality passed to sharp.
@@ -23,8 +23,18 @@ export const RENDITIONS = {
   full: { width: 8192, height: 4096, quality: 82 },
 };
 
-/** Rendition keys ordered smallest → largest. */
-export const RENDITION_ORDER = ['thumb', 'mid', 'full'];
+/**
+ * Which renditions the pipeline actually emits and the viewer may request,
+ * smallest first.
+ *
+ * `full` is deliberately excluded. 4096×2048 already exceeds the resolution of
+ * the screens this runs on, and the 8192px copy roughly triples both the disk
+ * footprint and the upload to the server for a difference only visible under
+ * heavy zoom. Re-enabling it is adding 'full' back to this array — the
+ * pipeline, the manifest, the quality manager and the build report all read
+ * from here.
+ */
+export const RENDITION_ORDER = ['thumb', 'mid'];
 
 /** Directory (relative to IMAGE_BASE_URL) holding the panorama renditions. */
 export const PANO_DIR = 'panos';

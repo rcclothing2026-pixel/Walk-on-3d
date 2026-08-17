@@ -22,10 +22,21 @@ UI language is Persian, RTL.
 
 ## Setup
 
+Everything runs locally. Nothing is uploaded anywhere — the panoramas never
+leave the machine.
+
 ```bash
 npm install
-npm run dev    # http://localhost:5173/tour/
+npm run dev
 ```
+
+Then open **http://localhost:5173/tour/tools/studio.html** — the studio is the
+front door: it shows what is done and what is not, and links into the right
+tool for the next missing step.
+
+The tour itself is at `/tour/`. Node 22+ and `npm install` is the whole setup;
+sharp ships prebuilt binaries, so there is no native toolchain to install.
+`poppler` is needed only to re-cut the floor plan from a revised PDF.
 
 The dev server serves the tour at **`/tour/`**, matching where it lives in
 production, so a path that works locally works deployed. The tools are at
@@ -33,6 +44,38 @@ production, so a path that works locally works deployed. The tools are at
 
 `sharp` is the only heavy dependency and ships prebuilt binaries; no native
 toolchain needed.
+
+## The studio
+
+`/tour/tools/studio.html` — one screen, all 43 nodes, four columns of state:
+photo in `raw/`, renditions built, alignment recorded, arrows picked, position
+on the plan. Each row links into the tool that does the next missing step, at
+that node, plus a **rebuild** button for when a photo has been replaced.
+
+The tools **save straight to `src/data/`**; there is no download-and-move step.
+That runs through a small API in `scripts/dev-api.js` mounted on the Vite dev
+server.
+
+That API is **development only** — the plugin declares `apply: 'serve'`, so
+none of it exists in `npm run build` or in the deployed bundle. It writes to
+disk and spawns the image pipeline, so it has to stay that way. Everything it
+can touch is fixed up front: writes go only to the three whitelisted files in
+`src/data/`, and the only process it spawns is the pipeline with a node number
+validated against the roster and passed as an argv element, never through a
+shell.
+
+If the API is unreachable the tools fall back to downloading the JSON, so they
+still work if opened without the dev server.
+
+## Replacing a photo
+
+The pipeline is incremental, so fixing one bad panorama is cheap:
+
+1. Drop the corrected export over `raw/17.jpg`.
+2. Press **rebuild** on that row in the studio (or `npm run process -- --only=17`).
+3. Re-check its alignment and arrows if the camera moved.
+
+Nothing else is touched.
 
 ## Phase 1 — image pipeline
 
@@ -51,7 +94,13 @@ Emits three renditions per node into `panos/`:
 |---|---|---|---|
 | `NN-thumb.jpg` | 1024×512 | 70 | instant placeholder while the real pano loads |
 | `NN-mid.jpg` | 4096×2048 | 80 | the default panorama |
-| `NN-full.jpg` | 8192×4096 | 82 | fetched only when the user zooms past a threshold |
+
+The 8192×4096 `full` rendition is **deliberately not built**. 4096×2048 already
+exceeds the screens this runs on, and the extra copy roughly triples both the
+disk footprint and the upload to the server for a difference only visible under
+heavy zoom. Re-enabling it is adding `'full'` back to `RENDITION_ORDER` in
+`src/lib/paths.js` — the pipeline, the manifest, the quality manager and the
+build report all read from there.
 
 Options:
 

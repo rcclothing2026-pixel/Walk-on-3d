@@ -28,6 +28,7 @@ import '@photo-sphere-viewer/markers-plugin/index.css';
 
 import { panoUrl } from '../src/lib/paths.js';
 import { nodeInfo, nodeNumbers } from '../src/lib/nodes.js';
+import { downloadJson, saveData } from './save.js';
 
 const NODES = nodeNumbers();
 const NODES_PATH = '/src/data/nodes.json';
@@ -406,17 +407,17 @@ async function copyNodeJson() {
   }
 }
 
-function downloadTour() {
-  const blob = new Blob([`${JSON.stringify(tour, null, 2)}\n`], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
+/** Writes straight to src/data/nodes.json via the studio API. */
+async function downloadTour() {
+  const result = await saveData('nodes', tour);
 
-  a.href = url;
-  a.download = 'nodes.json';
-  a.click();
+  if (result.ok) {
+    toast(`Saved to ${result.saved}`);
+    return;
+  }
 
-  URL.revokeObjectURL(url);
-  toast('Save it over src/data/nodes.json');
+  downloadJson('nodes.json', tour);
+  toast('API unreachable — downloaded instead', 'error');
 }
 
 /* ------------------------------------------------------------------ *
