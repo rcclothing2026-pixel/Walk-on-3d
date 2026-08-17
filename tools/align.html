@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Alignment — Walk on 3D</title>
+    <link rel="stylesheet" href="./tools.css" />
+  </head>
+  <body>
+    <div id="viewer" class="viewer"></div>
+
+    <!-- Fixed reference crosshair. The whole workflow is: park the view at
+         yaw 0, then spin the sphere until the reference direction sits here. -->
+    <div class="crosshair" aria-hidden="true">
+      <svg viewBox="0 0 100 100">
+        <line x1="50" y1="18" x2="50" y2="42" />
+        <line x1="50" y1="58" x2="50" y2="82" />
+        <line x1="18" y1="50" x2="42" y2="50" />
+        <line x1="58" y1="50" x2="82" y2="50" />
+        <circle cx="50" cy="50" r="3" />
+      </svg>
+    </div>
+
+    <header class="bar bar--top">
+      <div class="group">
+        <button id="prev" class="btn" title="Previous node (Page Up)">‹</button>
+        <select id="node" class="select" aria-label="Node"></select>
+        <button id="next" class="btn" title="Next node (Page Down)">›</button>
+      </div>
+
+      <div class="group group--name">
+        <span id="node-name" class="node-name" dir="rtl"></span>
+        <span id="node-type" class="tag"></span>
+        <span id="node-warn" class="tag tag--warn" hidden>name unconfirmed</span>
+      </div>
+
+      <div class="group">
+        <span id="progress" class="progress"></span>
+        <button id="copy" class="btn btn--primary" title="Copy alignment JSON">Copy JSON</button>
+        <button id="download" class="btn" title="Download alignment.json">Download</button>
+      </div>
+    </header>
+
+    <!-- Compass. The ring shows corrected world bearings; the needle shows
+         where the camera is actually looking once `pan` is applied. -->
+    <div class="compass" aria-hidden="true">
+      <svg id="compass" viewBox="-60 -60 120 120">
+        <circle class="compass__face" cx="0" cy="0" r="52" />
+        <!-- Needle first so the rotating ring's labels stay legible over it. -->
+        <polygon class="compass__needle" points="0,-44 6,0 0,10 -6,0" />
+        <g id="compass-ring"></g>
+        <circle class="compass__hub" cx="0" cy="0" r="4" />
+      </svg>
+      <div class="compass__readout">
+        <span id="bearing">0°</span>
+        <small>corrected bearing</small>
+      </div>
+    </div>
+
+    <footer class="bar bar--bottom">
+      <label class="slider-label" for="pan">sphereCorrection.pan</label>
+      <button id="nudge-down" class="btn btn--nudge" title="−1° (←)">−</button>
+      <input id="pan" class="slider" type="range" min="-180" max="180" step="0.5" value="0" />
+      <button id="nudge-up" class="btn btn--nudge" title="+1° (→)">+</button>
+      <input id="pan-value" class="number" type="number" min="-180" max="180" step="0.5" value="0" />
+      <span class="unit">°</span>
+      <button id="reset-view" class="btn" title="Return the camera to yaw 0 (Home)">Center view</button>
+      <button id="clear" class="btn" title="Clear this node's value">Clear</button>
+      <button id="save" class="btn btn--primary" title="Save and advance (Enter)">Save &amp; next</button>
+    </footer>
+
+    <div id="status" class="status" hidden></div>
+
+    <div id="help" class="help">
+      <strong>←/→</strong> 1° · <strong>Shift+←/→</strong> 10° · <strong>Enter</strong> save &amp;
+      next · <strong>Home</strong> center view · <strong>PgUp/PgDn</strong> node
+    </div>
+
+    <script type="module" src="./align.js"></script>
+  </body>
+</html>

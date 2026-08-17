@@ -34,12 +34,17 @@ import {
   nodeId,
   panoFilename,
 } from '../src/lib/paths.js';
+import { nodeNumbers, nodeRange } from '../src/lib/nodes.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-/** Nodes 1–43, per the node table in the project brief. */
-const FIRST_NODE = 1;
-const LAST_NODE = 43;
+/**
+ * Which nodes exist comes from src/data/names.json, not a constant here — the
+ * shooting plan and the brief's node table currently disagree on the count, so
+ * renumbering must stay a one-file change.
+ */
+const ALL_NODES = nodeNumbers();
+const { first: FIRST_NODE, last: LAST_NODE } = nodeRange();
 
 /** Source panoramas must be equirectangular, i.e. exactly 2:1. */
 const EXPECTED_ASPECT = 2;
@@ -62,7 +67,7 @@ async function main() {
   await assertRawDir(rawDir);
   await mkdir(outDir, { recursive: true });
 
-  const nodes = opts.only ?? range(FIRST_NODE, LAST_NODE);
+  const nodes = opts.only ?? ALL_NODES;
 
   console.log(`\n${bold('Panorama pipeline')}`);
   console.log(`  in   ${path.relative(ROOT, rawDir)}/`);
@@ -422,8 +427,12 @@ function parseNodeList(spec) {
     for (let n = from; n <= to; n++) out.add(n);
   }
 
-  if (!out.size) throw new Error('--only matched no nodes');
-  return [...out].sort((a, b) => a - b);
+  // A range like 20-30 may span gaps if the roster is ever non-contiguous.
+  const known = new Set(ALL_NODES);
+  const selected = [...out].filter((n) => known.has(n)).sort((a, b) => a - b);
+
+  if (!selected.length) throw new Error('--only matched no nodes in src/data/names.json');
+  return selected;
 }
 
 async function assertRawDir(rawDir) {
@@ -460,10 +469,6 @@ async function mapWithConcurrency(items, limit, fn) {
     }
   });
   await Promise.all(workers);
-}
-
-function range(from, to) {
-  return Array.from({ length: to - from + 1 }, (_, i) => from + i);
 }
 
 function sum(values) {

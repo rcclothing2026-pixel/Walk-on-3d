@@ -14,7 +14,7 @@ UI language is Persian, RTL.
 | Phase | | |
 |---|---|---|
 | 1 | Image pipeline | **done — awaiting review** |
-| 2 | Alignment tool | not started |
+| 2 | Alignment tool | **done — awaiting review** |
 | 3 | Hotspot picker | not started |
 | 4 | Viewer | not started |
 | 5 | Mobile & polish | not started |
@@ -82,6 +82,46 @@ criteria. It exits non-zero if any raw file is missing.
   fetching `full` is worth it on the current connection. It is merged, not
   overwritten, so `--only` runs do not erase the other nodes' entries.
 
+## Phase 2 — alignment tool
+
+Each panorama was shot with the camera facing a different direction, so yaw 0°
+means something different in every file. This records, per node, the
+`sphereCorrection.pan` that rotates the sphere onto one common reference
+direction. It has to be done before any hotspot work — arrows placed on
+unaligned nodes would all point wrong.
+
+```bash
+npm run dev
+# then open http://localhost:5173/tools/align.html
+```
+
+Per node:
+
+1. **Home** (or "Center view") parks the camera at yaw 0.
+2. Drag the slider, or hold **←/→**, until your reference direction sits under
+   the crosshair. **Shift+←/→** moves 10° at a time.
+3. **Enter** records the value and advances to the next node.
+
+The reference direction is yours to choose — building north, the courtyard's
+main axis, anything — as long as it is the *same* real-world direction in every
+node. The tour never displays an absolute bearing, so only consistency matters.
+
+`?node=17` opens the tool straight at a node. **PgUp/PgDn** step through them.
+
+When you are done, **Download** and save the file to `src/data/alignment.json`.
+The tool reads that file back on load, so alignment can be done across several
+sittings. Nodes you have not visited are written as `{ "pan": 0, "todo": true }`
+so an untouched node can never be mistaken for a deliberate 0°.
+
+Two things worth knowing:
+
+- **Nothing is persisted automatically.** The project rules forbid
+  localStorage, so values live in memory until you download them. The page
+  warns before unload, and prompts before you leave a node with an unsaved
+  value.
+- **A node with no panorama** shows the expected filename and the command to
+  generate it, rather than Photo Sphere Viewer's generic error.
+
 ## Image paths
 
 `src/config.js` holds `IMAGE_BASE_URL`, the single place that decides where
@@ -104,8 +144,51 @@ Iterate `1..43` and pad, don't iterate the object.
 
 ## Open questions on the source data
 
-Two things in the brief's link graph need a decision before Phase 3 wires up
-hotspots. Flagging rather than guessing:
+### 1. The shooting plan and the node table disagree — BLOCKING for Phase 3
+
+`docs/shooting-plan.jpg` is the marked-up floor plan. It is titled **"SHOOTING
+POINTS (44)"** and its numbering is **not** the brief's numbering. This has to
+be settled before hotspots are placed, because every link and every arrow is
+keyed to node numbers.
+
+What is certain:
+
+- **The plan has 44 points; the node table has 43 nodes.**
+- **The two hubs are numbered differently.** The plan's red "shoot twice"
+  points are **34** and **36**. The table's hubs are **35** (چهارسوق ماجرا) and
+  **37** (حیاط).
+- **Nodes 1–3 describe different things.** On the plan they are purple
+  "Entrance approach" points on the approach walkway, with the stairs marked
+  separately in orange. In the table they are the stair descent — سر پله /
+  میان پله / پای پله.
+- **The plan has a category the brief never mentions: "Hub — shoot twice."**
+  If each hub yields two panoramas, the raw file count is 46, not 43.
+- **The plan marks four orange stair points (39–42).** The table has stair-type
+  nodes at 1, 2, 3, 40 and 41.
+
+Across the upper range the plan runs consistently one *behind* the table —
+plan 33/34/35/36/37/38 line up with table 34/35/36/37/38/39 (اتاق مخفی سلطان,
+چهارسوق ماجرا, میتلونه, حیاط, دربار نقره, Sponsor). But that single offset does
+**not** hold across the whole plan: the orange stair points and the C20 /
+حوضخانه end run the other way. So this is not one clean off-by-one that can be
+applied mechanically — at least one extra point has been inserted somewhere in
+the low range, and the photo is too perspective-distorted to say where with
+confidence.
+
+**Which numbering is authoritative?** Everything downstream keys off the
+answer. Until it is settled, `src/data/names.json` still holds the brief's 43
+nodes, and the node roster is read from that one file (see `src/lib/nodes.js`)
+so switching to the plan's numbering is a single-file edit.
+
+Note also that `docs/shooting-plan.jpg` is a photo of a physical board, shot at
+an angle, with the markers and legend overlaid. It is reference material, not
+the `floorplan.png` the mini-map needs — that still has to arrive as a flat,
+square-on image.
+
+### 2. Problems inside the brief's own link graph
+
+Two more things need a decision before Phase 3 wires up hotspots. Flagging
+rather than guessing:
 
 1. **Node 30 (موسلک) has no links at all.** It appears in the node table but
    in no spine entry, leaf list, or cluster chain, so it is unreachable. It

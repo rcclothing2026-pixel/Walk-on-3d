@@ -1,0 +1,402 @@
+/*
+ * Shared chrome for the dev-only tools (alignment, hotspot picker).
+ *
+ * Tool chrome is deliberately in English and LTR — these are instruments for
+ * building the tour, not part of it. Node names are the exception: they render
+ * RTL in Persian so they can be matched against the plan at a glance.
+ */
+
+:root {
+  --bg: #12141a;
+  --panel: rgba(18, 20, 26, 0.92);
+  --line: rgba(255, 255, 255, 0.14);
+  --text: #eef1f6;
+  --muted: #98a2b3;
+  --accent: #4da3ff;
+  --warn: #ffb020;
+  --danger: #ff5a5a;
+  --ok: #3ddc84;
+  --bar-h: 52px;
+  --radius: 8px;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.viewer {
+  position: absolute;
+  inset: var(--bar-h) 0;
+}
+
+/* ---------- bars ---------- */
+
+.bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: var(--bar-h);
+  padding: 0 12px;
+  background: var(--panel);
+  backdrop-filter: blur(8px);
+  font-size: 13px;
+}
+
+.bar--top {
+  top: 0;
+  border-bottom: 1px solid var(--line);
+  justify-content: space-between;
+}
+
+.bar--bottom {
+  bottom: 0;
+  border-top: 1px solid var(--line);
+}
+
+.group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.group--name {
+  flex: 1;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.node-name {
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tag {
+  padding: 2px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.tag--warn {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.progress {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.progress[data-complete="true"] {
+  color: var(--ok);
+}
+
+/* ---------- controls ---------- */
+
+.btn,
+.select,
+.number {
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.btn:hover,
+.select:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn--primary {
+  border-color: transparent;
+  background: var(--accent);
+  color: #06121f;
+  font-weight: 600;
+}
+
+.btn--primary:hover {
+  background: #6fb5ff;
+}
+
+.btn--nudge {
+  width: 32px;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.select {
+  min-width: 170px;
+  cursor: pointer;
+}
+
+.select option {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.number {
+  width: 76px;
+  cursor: text;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.slider-label {
+  color: var(--muted);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.slider {
+  flex: 1;
+  min-width: 120px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.18);
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
+
+.slider::-webkit-slider-thumb {
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: grab;
+}
+
+.slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: grab;
+}
+
+.unit {
+  margin-inline-start: -4px;
+  color: var(--muted);
+}
+
+/* ---------- crosshair ---------- */
+
+/* The viewer is inset by --bar-h top and bottom, so its centre is the
+   viewport centre and 50% lands the crosshair exactly on it. */
+.crosshair {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: 88px;
+  height: 88px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 15;
+}
+
+.crosshair svg {
+  width: 100%;
+  height: 100%;
+}
+
+.crosshair line,
+.crosshair circle {
+  stroke: #fff;
+  stroke-width: 1.5;
+  fill: none;
+  opacity: 0.85;
+  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.9));
+}
+
+/* ---------- compass ---------- */
+
+.compass {
+  position: fixed;
+  top: calc(var(--bar-h) + 14px);
+  right: 14px;
+  z-index: 18;
+  width: 132px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  text-align: center;
+  pointer-events: none;
+}
+
+.compass svg {
+  width: 100%;
+  height: auto;
+}
+
+.compass__face {
+  fill: rgba(255, 255, 255, 0.04);
+  stroke: var(--line);
+}
+
+.compass__tick {
+  stroke: rgba(255, 255, 255, 0.35);
+  stroke-width: 1;
+}
+
+.compass__label {
+  fill: var(--muted);
+  font-size: 9px;
+  text-anchor: middle;
+  dominant-baseline: middle;
+}
+
+.compass__label--cardinal {
+  fill: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.compass__needle {
+  fill: var(--accent);
+}
+
+.compass__hub {
+  fill: var(--text);
+}
+
+.compass__readout {
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.compass__readout small {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 400;
+}
+
+/* ---------- status + help ---------- */
+
+/* Photo Sphere Viewer paints its own full-bleed "cannot be loaded" overlay.
+   The status panel below says the same thing with the actual filename and the
+   command to fix it, so PSV's version is suppressed rather than stacked. */
+.psv-overlay {
+  display: none !important;
+}
+
+.status {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 60;
+  max-width: min(560px, 90vw);
+  padding: 16px 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  /* Opaque, not translucent: it sits over an arbitrary panorama. */
+  background: #171a21;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+  transform: translate(-50%, -50%);
+  text-align: center;
+  line-height: 1.5;
+}
+
+.status[data-kind="error"] {
+  border-color: var(--danger);
+}
+
+.status code {
+  color: var(--warn);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+.toast {
+  position: fixed;
+  bottom: calc(var(--bar-h) + 14px);
+  left: 50%;
+  z-index: 40;
+  padding: 9px 16px;
+  border-radius: var(--radius);
+  background: var(--ok);
+  color: #06121f;
+  font-size: 13px;
+  font-weight: 600;
+  transform: translateX(-50%);
+  animation: toast 2s ease forwards;
+}
+
+.toast[data-kind="error"] {
+  background: var(--danger);
+  color: #fff;
+}
+
+@keyframes toast {
+  0%,
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.help {
+  position: fixed;
+  bottom: calc(var(--bar-h) + 14px);
+  left: 14px;
+  z-index: 18;
+  padding: 7px 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 11px;
+  pointer-events: none;
+}
+
+.help strong {
+  color: var(--text);
+  font-weight: 600;
+}
