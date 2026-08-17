@@ -44,6 +44,9 @@ const MAP_HIDDEN_UNTIL_NODE = 4;
  */
 let mapUsable = false;
 
+/** The node the viewer is on, so an error message can name it. */
+let currentNode = null;
+
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 const el = {
@@ -65,6 +68,7 @@ async function boot() {
   ]);
 
   const startNode = resolveStartNode(tour);
+  currentNode = String(startNode).padStart(2, '0');
   showPlaceholder(startNode);
 
   mapUsable = Object.values(tour.nodes).some(hasMapPoint);
@@ -116,6 +120,7 @@ async function boot() {
   tourPlugin.addEventListener('node-changed', ({ node }) => {
     const number = Number(node.id);
 
+    currentNode = node.id;
     quality.setNode(number);
     panel.close();
     setCaption(tour.nodes[node.id]);
@@ -341,9 +346,12 @@ function wireLoader(viewer) {
 
   viewer.addEventListener('ready', hideLoader, { once: true });
   viewer.addEventListener('panorama-loaded', hideLoader);
+  // A node whose panorama has not been built yet is a normal state while the
+  // tour is being assembled — not a fatal error. The rest of the tour still
+  // works, so say which node is missing and how to build it.
   viewer.addEventListener('panorama-error', ({ error }) => {
     hideLoader();
-    showFatal(error, 'پانوراما بارگذاری نشد.');
+    showMissingPanorama(error);
   });
 }
 
@@ -394,9 +402,30 @@ async function fetchJson(label, url) {
 
 function showFatal(err, message = 'بارگذاری تور ممکن نشد.') {
   console.error('[tour]', err);
+  showError(message, 'صفحه را دوباره بارگذاری کنید.');
+}
+
+/**
+ * The panorama for the current node has not been generated yet.
+ *
+ * Common while the tour is being built, so it names the node and the command
+ * rather than presenting a dead end.
+ */
+function showMissingPanorama(err) {
+  const node = currentNode ?? '؟';
+  console.warn(`[tour] node ${node} has no panorama`, err);
+
+  showError(
+    `پانوراما برای نقطه ${node} هنوز ساخته نشده است.`,
+    `در ترمینال اجرا کنید: npm run process -- --only=${Number(node) || 1}`,
+  );
+}
+
+function showError(message, hint) {
   el.loader.hidden = true;
   el.error.hidden = false;
   el.error.querySelector('[data-message]').textContent = message;
+  el.error.querySelector('.error__hint').textContent = hint;
 }
 
 function escapeHtml(value) {

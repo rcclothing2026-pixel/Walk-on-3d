@@ -7,14 +7,16 @@
     <meta name="description" content="تور مجازی ۳۶۰ درجه" />
     <title>تور مجازی</title>
 
-    <!-- Self-hosted; Google Fonts is not reliably reachable from Iran. -->
-    <link
-      rel="preload"
-      href="/tour/fonts/Vazirmatn-Regular.woff2"
-      as="font"
-      type="font/woff2"
-      crossorigin
-    />
+    <!--
+      Vazirmatn is self-hosted (Google Fonts is not reliably reachable from
+      Iran) and loaded by @font-face in styles.css, which is in the critical
+      path anyway.
+
+      There is deliberately no <link rel="preload"> here: Vite prepends the
+      base to root-relative URLs in this file, so /tour/fonts/… became
+      /tour/tour/fonts/… and 404'd. A preload pointing at nothing is worse
+      than no preload.
+    -->
   </head>
   <body>
     <div id="viewer" class="viewer"></div>
