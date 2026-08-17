@@ -30,7 +30,9 @@ import { nodeInfo, nodeNumbers } from '../src/lib/nodes.js';
 import { downloadJson, saveData } from './save.js';
 
 const NODES = nodeNumbers();
-const ALIGNMENT_PATH = '/src/data/alignment.json';
+/* Resolved against this module's own URL, not the site root. The dev server
+ * serves the tour under /tour/, so a root-absolute path silently 404s. */
+const ALIGNMENT_PATH = new URL('../src/data/alignment.json', import.meta.url);
 
 /** Which rendition to align against. `mid` shows enough detail to pick a
  *  landmark without pulling 8192px files for all 43 nodes. */

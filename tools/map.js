@@ -20,7 +20,9 @@ import { nodeInfo, nodeNumbers } from '../src/lib/nodes.js';
 import { downloadJson, saveData } from './save.js';
 
 const NODES = nodeNumbers();
-const NODES_PATH = '/src/data/nodes.json';
+/* Resolved against this module's own URL, not the site root. The dev server
+ * serves the tour under /tour/, so a root-absolute path silently 404s. */
+const NODES_PATH = new URL('../src/data/nodes.json', import.meta.url);
 
 const el = {
   stage: document.getElementById('stage'),
