@@ -122,6 +122,56 @@ Two things worth knowing:
 - **A node with no panorama** shows the expected filename and the command to
   generate it, rather than Photo Sphere Viewer's generic error.
 
+## The floor plan
+
+`public/tour/floorplan.png` is generated from the architect's AutoCAD sheet:
+
+```bash
+npm run floorplan
+```
+
+Source is `docs/blueprint-basement-r3.pdf` — an A3 sheet titled
+**زیر زمین ‑ حمام** (basement / hammam), showing the main level at −5.00, the
+حیاط خلوت courtyard and WC at −3.20, and the entrance staircase arriving at
+±0.00. That matches the tour's shape: nodes 1–3 descend a staircase, and the
+body of the tour sits below.
+
+The script needs `pdftoppm` from poppler-utils — a system tool, not an npm
+dependency (`apt-get install poppler-utils` / `brew install poppler`).
+
+It does not carry a hardcoded crop box. It renders the page, measures the ink
+in each row, takes the tallest contiguous band as the drawing, and crops to
+that band's extent — so a revised sheet with the plan in a different position
+still works. Output is a 16-colour palette PNG, which is plenty for a line
+drawing and about 4× smaller than greyscale.
+
+```bash
+npm run floorplan -- --pdf=docs/blueprint-r4.pdf   # a revised sheet
+npm run floorplan -- --width=2400 --dpi=600        # more resolution
+npm run floorplan -- --keep-render                 # keep the full page to inspect
+```
+
+Everything reads the plan through `floorplanUrl()` in `src/lib/paths.js`, so
+swapping it is a one-file change.
+
+### Still missing: node positions on the plan
+
+The mini-map needs an x/y for every node **on this drawing**. What exists today
+is a set of shooting points on a *different* drawing — the photographed event
+board in `docs/shooting-plan.jpg`, which is perspective-distorted and uses its
+own numbering. Those positions cannot be transferred mechanically.
+
+The cheapest fix is a small picker along the lines of `tools/align.html`: show
+the floor plan, click once per node, emit the coordinates. That is Phase 4 work
+and it needs the numbering question below settled first.
+
+### Cosmetic note
+
+The plan still carries its survey callouts (`−5/00`, `−3/20`, the level
+markers) and the `حمام` / `حیاط خلوت` / `WC` labels. At mini-map size these
+read as faint specks. Stripping them means editing the vector, so it is left
+until the mini-map exists and it is clear whether they actually hurt.
+
 ## Image paths
 
 `src/config.js` holds `IMAGE_BASE_URL`, the single place that decides where
@@ -180,10 +230,10 @@ answer. Until it is settled, `src/data/names.json` still holds the brief's 43
 nodes, and the node roster is read from that one file (see `src/lib/nodes.js`)
 so switching to the plan's numbering is a single-file edit.
 
-Note also that `docs/shooting-plan.jpg` is a photo of a physical board, shot at
-an angle, with the markers and legend overlaid. It is reference material, not
-the `floorplan.png` the mini-map needs — that still has to arrive as a flat,
-square-on image.
+Note that `docs/shooting-plan.jpg` is a photo of a physical board, shot at an
+angle, with markers and a legend overlaid. It is reference material only. The
+mini-map's actual plan now comes from the architect's PDF — see
+[The floor plan](#the-floor-plan).
 
 ### 2. Problems inside the brief's own link graph
 

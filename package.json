@@ -6,6 +6,7 @@
   "description": "360° virtual tour of a historic courtyard complex — static bundle for Laravel public/tour/",
   "scripts": {
     "process": "node scripts/process.js",
+    "floorplan": "node scripts/floorplan.js",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview"

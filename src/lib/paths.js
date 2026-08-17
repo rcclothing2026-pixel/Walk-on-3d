@@ -29,6 +29,13 @@ export const RENDITION_ORDER = ['thumb', 'mid', 'full'];
 /** Directory (relative to IMAGE_BASE_URL) holding the panorama renditions. */
 export const PANO_DIR = 'panos';
 
+/**
+ * The mini-map's floor plan, generated from the architect's PDF by
+ * `npm run floorplan`. Swapping in a revised plan is a change to this name
+ * (or just a re-run of that script), nothing else.
+ */
+export const FLOORPLAN_FILE = 'floorplan.png';
+
 /** Node ids are always two digits: 1 → '01', 43 → '43'. */
 export function nodeId(node) {
   return String(node).padStart(2, '0');
@@ -48,6 +55,11 @@ export function panoUrl(node, rendition) {
 /** e.g. assetUrl('floorplan.png') → '/tour/floorplan.png' */
 export function assetUrl(relativePath) {
   return `${IMAGE_BASE_URL}${relativePath.replace(/^\/+/, '')}`;
+}
+
+/** The floor plan the mini-map draws, e.g. '/tour/floorplan.png' */
+export function floorplanUrl() {
+  return assetUrl(FLOORPLAN_FILE);
 }
 
 function assertRendition(rendition) {
