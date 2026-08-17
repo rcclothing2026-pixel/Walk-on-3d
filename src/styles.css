@@ -1,0 +1,390 @@
+/*
+ * Tour chrome. Plain CSS with custom properties — no framework, per the brief.
+ *
+ * The document is RTL. Everything positional uses logical properties
+ * (inset-inline-*, margin-inline-*) so the layout follows direction rather
+ * than being hand-flipped.
+ */
+
+/* ---------- font ---------- */
+
+@font-face {
+  font-family: 'Vazirmatn';
+  src: url('/tour/fonts/Vazirmatn-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Vazirmatn';
+  src: url('/tour/fonts/Vazirmatn-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Vazirmatn';
+  src: url('/tour/fonts/Vazirmatn-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-display: swap;
+}
+
+/* ---------- tokens ---------- */
+
+:root {
+  --bg: #0e1014;
+  --surface: rgba(16, 19, 25, 0.92);
+  --line: rgba(255, 255, 255, 0.14);
+  --text: #f2f5f9;
+  --muted: #a7b0c0;
+  --accent: #ffd54a;
+  --danger: #ff6b6b;
+
+  --radius: 14px;
+  --tap: 44px; /* minimum finger-sized control */
+  --gap: 14px;
+
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-s: env(safe-area-inset-left, 0px);
+  --safe-e: env(safe-area-inset-right, 0px);
+
+  font-family: 'Vazirmatn', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/*
+ * The UA rule for [hidden] is display:none, but any author rule that sets
+ * `display` beats it — which silently leaves "hidden" overlays on screen,
+ * swallowing every click. Several elements here are toggled by the `hidden`
+ * property and do set a display, so make the attribute authoritative.
+ */
+[hidden] {
+  display: none !important;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  /* Acceptance criterion 6: never a horizontal scrollbar, at any width. */
+  overflow: hidden;
+  overscroll-behavior: none;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.viewer {
+  position: absolute;
+  inset: 0;
+  /* Let the viewer own touch gestures; the page itself must not pan or zoom. */
+  touch-action: none;
+}
+
+/* ---------- loading ---------- */
+
+.loader {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+}
+
+.loader__thumb {
+  position: absolute;
+  inset: 0;
+  background-position: center;
+  background-size: cover;
+  /* The thumbnail is 1024px wide standing in for 4096 — blur hides that, and
+     the scale keeps the blur from showing pale edges. */
+  filter: blur(26px) saturate(1.15);
+  transform: scale(1.12);
+}
+
+.loader__panel {
+  position: relative;
+  width: min(320px, 76vw);
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  backdrop-filter: blur(10px);
+  text-align: center;
+}
+
+.loader__track {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.loader__bar {
+  width: 0%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 0.2s ease;
+}
+
+.loader__text {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* ---------- caption ---------- */
+
+.caption {
+  position: fixed;
+  inset-block-start: calc(var(--safe-t) + var(--gap));
+  inset-inline-start: calc(var(--safe-s) + var(--gap));
+  z-index: 20;
+  max-width: min(60vw, 340px);
+  margin: 0;
+  padding: 9px 15px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  backdrop-filter: blur(10px);
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+.caption:empty {
+  display: none;
+}
+
+/* ---------- brand pins ---------- */
+
+.brand-pin {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  cursor: pointer;
+}
+
+.brand-pin svg {
+  width: 30px;
+  height: 30px;
+  fill: var(--accent);
+  stroke: rgba(14, 16, 20, 0.8);
+  stroke-width: 1.1;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.6));
+  transition: transform 0.15s ease;
+}
+
+.brand-pin__dot {
+  fill: rgba(14, 16, 20, 0.85);
+  stroke: none;
+}
+
+.brand-pin:hover svg {
+  transform: scale(1.15);
+}
+
+/* ---------- brand panel ---------- */
+
+.panel-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+}
+
+.panel-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+
+.panel-layer.is-open .panel-backdrop {
+  opacity: 1;
+}
+
+/*
+ * Physically right-hand, per the brief — deliberately NOT a logical property.
+ * In an RTL document `inset-inline-end` resolves to the left edge, which would
+ * put the panel on the wrong side. The panel's *contents* are still RTL.
+ */
+.brand-panel {
+  position: absolute;
+  inset-block: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  width: min(380px, 90vw);
+  padding: calc(var(--safe-t) + 18px) 20px calc(var(--safe-b) + 20px);
+  border-left: 1px solid var(--line);
+  background: var(--surface);
+  backdrop-filter: blur(16px);
+  transform: translateX(100%);
+  transition: transform 0.28s cubic-bezier(0.22, 0.8, 0.3, 1);
+}
+
+.panel-layer.is-open .brand-panel {
+  transform: translateX(0);
+}
+
+.brand-panel__close {
+  align-self: flex-start;
+  display: grid;
+  place-items: center;
+  width: var(--tap);
+  height: var(--tap);
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.brand-panel__close svg {
+  width: 20px;
+  height: 20px;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  fill: none;
+}
+
+.brand-panel__body {
+  flex: 1;
+  margin-block-start: 18px;
+  overflow-y: auto;
+}
+
+.brand-panel__logo {
+  display: block;
+  width: auto;
+  max-width: 160px;
+  max-height: 80px;
+  margin-block-end: 16px;
+}
+
+.brand-panel__name {
+  margin: 0 0 10px;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.brand-panel__description {
+  margin: 0;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.85;
+}
+
+.brand-panel__link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--tap);
+  margin-block-start: 22px;
+  padding: 0 22px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #14161b;
+  font-size: 15px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+/* ---------- error ---------- */
+
+/* translate() is always physical, so centring uses physical offsets too —
+   mixing a logical inset with a physical translate flips it in RTL. */
+.error {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 70;
+  width: min(380px, 88vw);
+  padding: 22px;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  background: var(--surface);
+  transform: translate(-50%, -50%);
+  text-align: center;
+}
+
+.error p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.error__hint {
+  margin-block-start: 8px !important;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* ---------- Photo Sphere Viewer overrides ---------- */
+
+/* Finger-sized navbar buttons, per the brief's 44px minimum. */
+.psv-navbar {
+  --psv-navbar-height: var(--tap);
+  background: var(--surface) !important;
+  backdrop-filter: blur(10px);
+}
+
+.psv-button {
+  min-width: var(--tap);
+  height: var(--tap) !important;
+}
+
+.psv-map {
+  --psv-map-radius: var(--radius);
+}
+
+/* The map sits above the navbar rather than under it on short screens. */
+.psv-map__container {
+  margin-block-end: calc(var(--tap) + 8px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* iPhone SE and similar: keep every control reachable and nothing clipped. */
+@media (max-width: 380px) {
+  .caption {
+    max-width: calc(100vw - 2 * var(--gap) - var(--tap));
+    font-size: 13px;
+  }
+
+  .brand-panel {
+    width: 100vw;
+  }
+}
+
+/* Virtual tour arrows. The plugin renders them into its own CSS3D layer, so
+   they are styled by class rather than through viewer options. */
+.tour-arrow {
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.75));
+  transition: filter 0.15s ease;
+}
+
+.tour-arrow:hover {
+  filter: drop-shadow(0 0 10px rgba(255, 213, 74, 0.9));
+}

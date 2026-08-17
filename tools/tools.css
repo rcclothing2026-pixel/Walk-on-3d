@@ -26,6 +26,12 @@
   box-sizing: border-box;
 }
 
+/* An author `display` beats the UA's [hidden] rule, which would leave hidden
+   overlays on screen swallowing clicks. Make the attribute authoritative. */
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   margin: 0;
@@ -533,4 +539,69 @@ body {
 
 .has-panel .help {
   inset-inline-start: calc(var(--panel-w) + 14px);
+}
+
+/* ---------- map point picker ---------- */
+
+.stage {
+  position: absolute;
+  inset: var(--bar-h) 0;
+  inset-inline-start: var(--panel-w);
+  overflow: auto;
+  background: #1b1e25;
+  cursor: grab;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+
+.stage:active {
+  cursor: grabbing;
+}
+
+.plan-wrap {
+  position: relative;
+  flex: none;
+}
+
+.plan {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 4px;
+  /* The plan is black-on-white line art; inverting sits it in the dark tool
+     chrome without needing a second export. */
+  filter: invert(1) hue-rotate(180deg);
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.plan-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.plan-dot circle {
+  fill: var(--accent);
+  stroke: #06121f;
+  stroke-width: 1.5;
+  opacity: 0.85;
+}
+
+.plan-dot text {
+  fill: var(--text);
+  font-family: ui-monospace, Menlo, monospace;
+  font-weight: 700;
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: #06121f;
+  stroke-width: 3;
+}
+
+.plan-dot.is-active circle {
+  fill: var(--ok);
+  opacity: 1;
 }

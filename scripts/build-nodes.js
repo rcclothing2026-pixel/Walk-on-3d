@@ -88,12 +88,19 @@ async function main() {
       };
     });
 
+    // Placed with tools/map.html and preserved across rebuilds, exactly like
+    // hand-picked arrow angles.
+    const mapPoint = previous?.nodes?.[id]?.map;
+
     nodes[id] = {
       id,
       name,
       type,
       ...(unconfirmed ? { unconfirmed: true } : {}),
       pan: readPan(alignment, id),
+      ...(Number.isFinite(mapPoint?.x) && Number.isFinite(mapPoint?.y)
+        ? { map: { x: mapPoint.x, y: mapPoint.y } }
+        : {}),
       links,
     };
   }

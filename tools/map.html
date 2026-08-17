@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Map points — Walk on 3D</title>
+    <link rel="stylesheet" href="./tools.css" />
+  </head>
+  <body class="has-panel">
+    <div id="stage" class="stage">
+      <div id="plan-wrap" class="plan-wrap">
+        <img id="plan" class="plan" alt="Floor plan" />
+        <svg id="overlay" class="plan-overlay"></svg>
+      </div>
+    </div>
+
+    <header class="bar bar--top">
+      <div class="group">
+        <button id="prev" class="btn" title="Previous node (Page Up)">‹</button>
+        <select id="node" class="select" aria-label="Node"></select>
+        <button id="next" class="btn" title="Next node (Page Down)">›</button>
+      </div>
+
+      <div class="group group--name">
+        <span id="node-name" class="node-name" dir="rtl"></span>
+        <span id="node-type" class="tag"></span>
+        <span id="node-coords" class="tag"></span>
+      </div>
+
+      <div class="group">
+        <span id="progress" class="progress"></span>
+        <button id="copy" class="btn btn--primary" title="Copy the map points">Copy points</button>
+        <button id="download" class="btn" title="Download the merged nodes.json">Download all</button>
+      </div>
+    </header>
+
+    <aside class="panel">
+      <div class="panel__head">
+        <span>Nodes</span>
+        <span id="placed-count" class="progress"></span>
+      </div>
+      <ol id="node-list" class="links"></ol>
+      <p class="panel__hint">
+        Click the plan to place the selected node. Placing advances to the next
+        unplaced node, so you can work straight down the list.
+      </p>
+    </aside>
+
+    <footer class="bar bar--bottom">
+      <span class="slider-label">zoom</span>
+      <input id="zoom" class="slider" type="range" min="40" max="400" step="5" value="100" />
+      <span id="zoom-value" class="progress">100%</span>
+      <button id="fit" class="btn" title="Fit the plan to the window">Fit</button>
+      <button id="clear-node" class="btn" title="Unplace this node (Delete)">Clear node</button>
+      <button id="clear-all" class="btn">Clear all</button>
+    </footer>
+
+    <div id="status" class="status" hidden></div>
+
+    <div id="help" class="help">
+      <strong>Click</strong> place · <strong>Del</strong> unplace ·
+      <strong>PgUp/PgDn</strong> node · drag to pan
+    </div>
+
+    <script type="module" src="./map.js"></script>
+  </body>
+</html>
