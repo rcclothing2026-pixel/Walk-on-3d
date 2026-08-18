@@ -22,10 +22,13 @@
 
 import { Viewer } from '@photo-sphere-viewer/core';
 import '@photo-sphere-viewer/core/index.css';
+import { MarkersPlugin } from '@photo-sphere-viewer/markers-plugin';
+import '@photo-sphere-viewer/markers-plugin/index.css';
 
 import { floorplanUrl, dataUrl, panoUrl } from '../src/lib/paths.js';
 import { loadTourData } from '../src/lib/tour-data.js';
 import {
+  arrowYaw,
   detectMirrored,
   planBearing,
   planNorthFromSighting,
@@ -79,6 +82,7 @@ let tour = null;
 let NODES = [];
 let current = 1;
 let viewer = null;
+let markers = null;
 
 /** node → { pan, planNorth } exactly as alignment.json holds it. */
 const alignment = new Map();
@@ -261,8 +265,21 @@ async function openNode(node) {
         defaultPitch: 0,
         navbar: false,
         moveInertia: false,
+        plugins: [[MarkersPlugin, { markers: [] }]],
       });
       window.__viewer = viewer; // dev handle, same as the other tools
+      markers = viewer.getPlugin(MarkersPlugin);
+
+      // Clicking an arrow is the quickest way to say "that is the one I am
+      // looking at" — the list is a fallback, not the primary control.
+      markers.addEventListener('select-marker', ({ marker }) => {
+        const node = Number(marker.id.replace('arrow-', ''));
+        if (!targets().includes(node)) return;
+        el.target.value = String(node);
+        drawPlan();
+        syncHint();
+        syncArrows();
+      });
       viewer.addEventListener('position-updated', syncSightLabel);
       viewer.addEventListener('panorama-error', () => {
         if (!loadingPanorama) return;
@@ -273,6 +290,7 @@ async function openNode(node) {
         loadingPanorama = false;
         hideStatus();
         setEnabled(true);
+        syncArrows();
       });
     } else {
       await viewer.setPanorama(url, {
@@ -291,6 +309,78 @@ async function openNode(node) {
   }
 
   syncSightLabel();
+  syncArrows();
+}
+
+/**
+ * Draws the arrows this node's links would produce, live.
+ *
+ * They are the whole point of anchoring, and until now they only appeared after
+ * a rebuild in another tool — so the one thing you could not see was whether
+ * the sighting you just took had worked. Computed here with the same function
+ * the build uses, from the same anchor, so what is on screen is what will be
+ * written.
+ *
+ * A node with no anchor yet has no arrows to show. That is not a failure; it is
+ * the reason to take a sighting.
+ */
+function syncArrows() {
+  if (!markers) return;
+  markers.clearMarkers();
+
+  const anchor = pendingAnchor();
+  if (!Number.isFinite(anchor)) return;
+
+  const pan = alignment.get(current)?.pan ?? 0;
+  const aimed = target();
+
+  for (const node of targets()) {
+    const yaw = arrowYaw({
+      planNorth: anchor,
+      pan,
+      bearing: planBearing(tour.nodes[pad(current)].map, tour.nodes[pad(node)].map),
+      mirrored,
+    });
+
+    const link = (tour.nodes[pad(current)]?.links ?? []).find((l) => Number(l.node) === node);
+    const pitch = Number.isFinite(link?.pitch) ? link.pitch : -20;
+    const picked = link && !link.auto && !link.derived;
+
+    markers.addMarker({
+      id: `arrow-${node}`,
+      position: { yaw: `${round(yaw)}deg`, pitch: `${pitch}deg` },
+      html: arrowHtml(node, { aimed: node === aimed, picked }),
+      size: { width: 64, height: 64 },
+      anchor: 'center center',
+      tooltip: `${pad(node)} — ${escapeHtml(tourData.info(node).name)}<br>${round(yaw)}°`,
+    });
+  }
+}
+
+/**
+ * The anchor to draw arrows from: the one just sighted, or the saved one.
+ *
+ * Preferring the unsaved sighting is what makes this immediate — you turn to a
+ * doorway, record it, and every other arrow at the node swings into place
+ * before you have committed to anything.
+ */
+function pendingAnchor() {
+  if (sightings.length) {
+    return planNorthFromSighting({ ...sightings[0], mirrored });
+  }
+  return alignment.get(current)?.planNorth ?? NaN;
+}
+
+function arrowHtml(node, { aimed, picked }) {
+  const colour = aimed ? 'var(--accent)' : picked ? 'var(--ok)' : 'rgba(255,255,255,.8)';
+
+  return `
+    <div class="hs-marker" style="--c:${colour}; --s:${aimed ? 1 : 0.8}">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 2 L20 20 L12 15.5 L4 20 Z" />
+      </svg>
+      <span>${pad(node)}</span>
+    </div>`;
 }
 
 /**
@@ -365,6 +455,9 @@ function record() {
   nextTarget();
   syncChrome();
   drawPlan();
+  // The whole node's arrows swing into place here, before anything is saved.
+  // Seeing them land on the right doorways is how you know the sighting worked.
+  syncArrows();
 
   if (needsCalibration() && sightings.length >= 2) settleHandedness();
 }
@@ -412,6 +505,7 @@ function settleHandedness() {
   // Every anchor already recorded was drawn from a stored sighting, so a change
   // of handedness is re-derived rather than re-walked.
   if (changed) reanchorFromSightings();
+  syncArrows();
 
   if (verdict.mirrored) {
     showStatus(
@@ -646,6 +740,9 @@ function toggleLink(other) {
   setEnabled(true);
   drawPlan();
   syncChrome();
+  // The new link's arrow appears the moment it is drawn, if the node is
+  // anchored. That is the answer to "did that do anything".
+  syncArrows();
 }
 
 /**
@@ -702,6 +799,7 @@ function placeHere(point) {
   setEnabled(true);
   drawPlan();
   syncChrome();
+  syncArrows();
   toast(`Placed ${id}`);
 }
 
@@ -740,6 +838,7 @@ function onPlanClick(event) {
     el.target.value = String(hit);
     drawPlan();
     syncHint();
+    syncArrows();
   }
 }
 
@@ -867,6 +966,7 @@ async function undoLast() {
   drawPlan();
   syncChrome();
   syncUndo();
+  syncArrows();
   toast(`Undid ${step.label}`);
 }
 
@@ -1097,7 +1197,7 @@ function wire() {
   el.node.addEventListener('change', () => openNode(Number(el.node.value)));
   el.prev.addEventListener('click', () => step(-1));
   el.next.addEventListener('click', () => step(1));
-  el.target.addEventListener('change', () => { drawPlan(); syncHint(); });
+  el.target.addEventListener('change', () => { drawPlan(); syncHint(); syncArrows(); });
   el.record.addEventListener('click', record);
   el.save.addEventListener('click', saveAndNext);
   el.skip.addEventListener('click', () => step(1));
