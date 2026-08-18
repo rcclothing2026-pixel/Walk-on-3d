@@ -667,6 +667,32 @@ bash deploy/linux/tunnel.sh --logs
 bash deploy/linux/tunnel.sh --url
 ```
 
+**On a network that throttles UDP.** cloudflared prefers QUIC — UDP on port
+7844 — and plenty of networks drop or throttle it badly enough that the
+handshake never completes. cloudflared then retries forever rather than falling
+back, so the service reads `active (running)` while nothing can reach it. The
+logs are unmistakable:
+
+```
+ERR Failed to dial a quic connection error="failed to dial to edge with quic:
+    timeout: no recent network activity"
+```
+
+`tunnel.sh` therefore writes `protocol: http2` by default — the same tunnel over
+TCP/443, which survives anything that lets ordinary HTTPS through. It is
+marginally slower to establish and no different to use. On a network where UDP
+is fine, `--protocol quic` switches back.
+
+```bash
+bash deploy/linux/tunnel.sh --protocol quic
+bash deploy/linux/tunnel.sh --protocol http2
+```
+
+`--status` reads the journal as well as the unit, because "active (running)" is
+not the same question as "connected" — it counts connections actually
+registered in the last three minutes, and names QUIC as the cause when it sees
+it.
+
 **One trap it disarms for you.** Vite refuses requests whose `Host` header it
 does not recognise — that is what stops a stranger's DNS record from pointing at
 your machine. Through a tunnel the `Host` *is* the public hostname, so it must

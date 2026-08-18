@@ -15,6 +15,7 @@
 #   bash deploy/linux/tunnel.sh --status              is it connected?
 #   bash deploy/linux/tunnel.sh --logs                what did it say?
 #   bash deploy/linux/tunnel.sh --url                 the address it serves
+#   bash deploy/linux/tunnel.sh --protocol quic       change how it dials out
 #
 # The hostname must be on a zone in the same Cloudflare account you log into
 # below. The DNS record is created for you.
@@ -31,6 +32,7 @@ UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 UNIT="$UNIT_DIR/walk-tunnel.service"
 TUNNEL="${WALK_TUNNEL_NAME:-walk-studio}"
 PORT="${WALK_PORT:-5173}"
+PROTOCOL="${WALK_TUNNEL_PROTOCOL:-http2}"
 
 G='\033[0;32m'; Y='\033[1;33m'; R='\033[0;31m'; D='\033[2m'; N='\033[0m'
 say()  { printf "  %s\n" "$1"; }
@@ -40,14 +42,42 @@ die()  { printf "\n  ${R}✗${N} %s\n\n" "$1"; exit 1; }
 
 case "${1:-}" in
   --status)
-    systemctl --user status walk-tunnel --no-pager 2>/dev/null || say "no tunnel service yet"
+    if ! systemctl --user status walk-tunnel --no-pager 2>/dev/null; then
+      say "no tunnel service yet"
+      exit 0
+    fi
+    # "active (running)" only means the process is alive. A tunnel that cannot
+    # reach the edge stays alive forever, retrying, so the useful question is
+    # whether any connection actually registered.
+    RECENT="$(journalctl --user -u walk-tunnel --since '-3min' --no-pager 2>/dev/null || true)"
+    REGISTERED="$(grep -c 'Registered tunnel connection' <<< "$RECENT" || true)"
+    printf "\n"
+    if [[ "$REGISTERED" -gt 0 ]]; then
+      ok "$REGISTERED connection(s) registered in the last 3 minutes"
+    elif grep -q 'quic' <<< "$RECENT"; then
+      warn "alive but not connected, and the failures are QUIC (UDP) ones."
+      say  "  Networks that throttle UDP do exactly this. Move it onto TCP:"
+      say  "    bash deploy/linux/tunnel.sh --protocol http2"
+    else
+      warn "no connection registered in the last 3 minutes — see --logs"
+    fi
     exit 0 ;;
   --logs)
     journalctl --user -u walk-tunnel -n 60 --no-pager 2>/dev/null || say "no logs yet"
     exit 0 ;;
   --url)
-    grep -m1 'hostname:' "$CF_DIR/config.yml" 2>/dev/null | awk '{print "https://" $2}' \
-      || die "no tunnel configured yet"
+    [[ -f "$CF_DIR/config.yml" ]] || die "no tunnel configured yet"
+    grep -m1 'hostname:' "$CF_DIR/config.yml" | sed 's/.*hostname: *//' | awk '{print "https://" $1}'
+    exit 0 ;;
+  --protocol)
+    # Switching transport is the fix for a network that eats UDP; see the
+    # comment on PROTOCOL below.
+    [[ -n "${2:-}" ]] || die "which one? quic, http2 or auto"
+    [[ -f "$CF_DIR/config.yml" ]] || die "no tunnel configured yet"
+    sed -i "s|^protocol:.*|protocol: $2|" "$CF_DIR/config.yml"
+    grep -q '^protocol:' "$CF_DIR/config.yml" || printf 'protocol: %s\n' "$2" >> "$CF_DIR/config.yml"
+    systemctl --user restart walk-tunnel 2>/dev/null || true
+    ok "transport set to $2 — give it about twenty seconds, then --status"
     exit 0 ;;
 esac
 
@@ -107,6 +137,20 @@ cat > "$CF_DIR/config.yml" <<EOF
 # Written by deploy/linux/tunnel.sh — edit here, then restart walk-tunnel.
 tunnel: $UUID
 credentials-file: $CREDS
+
+# cloudflared prefers QUIC, which is UDP on port 7844. Plenty of networks —
+# domestic Iranian ISPs among them — throttle or drop UDP to the point where
+# the handshake never completes, and cloudflared retries it forever rather
+# than giving up and falling back. The symptom is unmistakable and looks like
+# a broken tunnel:
+#
+#   ERR Failed to dial a quic connection error="failed to dial to edge with
+#       quic: timeout: no recent network activity"
+#
+# http2 is the same tunnel over TCP/443, which survives anything that lets
+# ordinary HTTPS through. Marginally slower to establish and no different to
+# use. Switch back with:  bash deploy/linux/tunnel.sh --protocol quic
+protocol: $PROTOCOL
 
 ingress:
   - hostname: $HOSTNAME_ARG
