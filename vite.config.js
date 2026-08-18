@@ -27,6 +27,19 @@ import { gate } from './scripts/gate.js';
 export default defineConfig({
   base: '/tour/',
   publicDir: 'public',
+  server: {
+    // Vite refuses requests whose Host header it does not recognise, which is
+    // what stops a stranger's DNS record from pointing at this machine. Behind
+    // a tunnel the Host is the public hostname, so it has to be named:
+    //
+    //   WALK_HOSTS=studio.example.ir            in the studio's env file
+    //
+    // Unset, only loopback works — the right default for a laptop.
+    allowedHosts: (process.env.WALK_HOSTS ?? '')
+      .split(',')
+      .map((host) => host.trim())
+      .filter(Boolean),
+  },
   build: {
     outDir: 'dist',
     emptyOutDir: true,

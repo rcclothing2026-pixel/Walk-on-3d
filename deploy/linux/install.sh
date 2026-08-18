@@ -125,6 +125,7 @@ cat > "$UNIT" <<EOF
 Description=Walk on 3D — tour studio
 Documentation=https://github.com/rcclothing2026-pixel/Walk-on-3d
 After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
@@ -133,7 +134,11 @@ EnvironmentFile=$ENV_FILE
 # Loopback only. Anything reaching this from outside comes through the tunnel,
 # which is the one place access can be controlled.
 ExecStart=$(command -v npx) vite --host 127.0.0.1 --port $PORT --strictPort
-Restart=on-failure
+# Always, not on-failure: a dev server asked to stop, that stops cleanly, still
+# needs to be running afterwards. A genuinely broken config exits fast enough to
+# trip systemd's start limit, which is what should happen — it gives up visibly
+# rather than looping in silence.
+Restart=always
 RestartSec=5
 # The pipeline decodes 8192×4096 frames; this is generous but not unbounded.
 MemoryMax=4G
@@ -170,9 +175,15 @@ cat <<EOF
 
     http://127.0.0.1:$PORT/tour/tools/studio.html?key=$TOKEN
 
-  From another machine, tunnel to it rather than opening the port:
+  From another machine, tunnel to it rather than opening the port. For a
+  look right now:
 
     cloudflared tunnel --url http://127.0.0.1:$PORT
+
+  That address is temporary and changes every time you reconnect. For one
+  that survives a reboot, on a hostname you own:
+
+    bash deploy/linux/tunnel.sh studio.your-domain.ir
 
   Useful afterwards:
 

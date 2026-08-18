@@ -64,7 +64,8 @@ export function gate() {
           // in screenshots and in any log the tunnel keeps.
           url.searchParams.delete('key');
           res.setHeader('Set-Cookie',
-            `${COOKIE}=${encodeURIComponent(secret)}; Path=/; Max-Age=${COOKIE_MAX_AGE}; HttpOnly; SameSite=Lax`);
+            `${COOKIE}=${encodeURIComponent(secret)}; Path=/; Max-Age=${COOKIE_MAX_AGE}; HttpOnly; SameSite=Lax` +
+            (overHttps(req) ? '; Secure' : ''));
           res.statusCode = 302;
           res.setHeader('Location', url.pathname + (url.search || ''));
           return res.end();
@@ -83,6 +84,20 @@ export function gate() {
       });
     },
   };
+}
+
+/**
+ * Whether this request reached us over HTTPS.
+ *
+ * Through a tunnel it always has — the tunnel terminates TLS and forwards over
+ * loopback — and the cookie must then be marked Secure so a browser will not
+ * send it anywhere else. Added conditionally rather than always because a
+ * Secure cookie is silently discarded over plain http, which on a LAN address
+ * would look exactly like a key that does not work.
+ */
+function overHttps(req) {
+  const forwarded = String(req.headers['x-forwarded-proto'] ?? '').split(',')[0].trim();
+  return forwarded === 'https' || Boolean(req.socket?.encrypted);
 }
 
 function presented(req, secret) {

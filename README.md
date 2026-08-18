@@ -612,6 +612,80 @@ The cache policy is deliberately split: panoramas and hashed assets immutable
 for a year, `index.html` always revalidated (it is what points at the current
 asset hashes), tour JSON on a short TTL because the tools edit it.
 
+## The studio on a Linux box
+
+The studio is the engine — Node, sharp, the image pipeline and every editor —
+and it belongs on a machine with real cores and real disk rather than a laptop
+that closes. `deploy/linux/install.sh` puts it there as a **systemd user
+service**: no root at any point, starts at boot, restarts if it dies.
+
+```bash
+bash deploy/linux/install.sh
+sudo loginctl enable-linger $(id -un)     # once, or it dies with your SSH session
+```
+
+Lingering is the part people skip and then wonder about. Without it a user
+service is torn down when your last session closes — which is exactly what
+happens the moment you disconnect the SSH you installed it over.
+
+It binds **127.0.0.1 only**, on purpose. The studio writes project files and
+spawns the pipeline; it must not be a port on a machine. `WALK_TOKEN` is
+generated into `~/.config/walk-on-3d/env` (mode 600) and every request has to
+carry it — present `?key=…` once and the browser holds a cookie for a month.
+
+```bash
+bash deploy/linux/install.sh --status     # is it running
+bash deploy/linux/install.sh --logs       # what it said when it wasn't
+bash deploy/linux/install.sh --token      # the key
+```
+
+### Reaching it from somewhere else
+
+A **quick tunnel** is fine for a first look and useless as somewhere to work —
+it lives in the terminal you started it in, dies with the SSH session, and hands
+out a new random hostname every time:
+
+```bash
+cloudflared tunnel --url http://127.0.0.1:5173      # temporary
+```
+
+For an address that survives a reboot, use a hostname you own:
+
+```bash
+bash deploy/linux/tunnel.sh studio.your-domain.ir
+```
+
+That creates a **named tunnel**, writes `~/.cloudflared/config.yml` pointing it
+at the loopback port, creates the DNS record, and installs it as a second user
+service alongside the studio. Both come back after a reboot at the same address.
+The tunnel dials **out**, so nothing is open on the machine and nothing depends
+on your home IP address staying still.
+
+```bash
+bash deploy/linux/tunnel.sh --status
+bash deploy/linux/tunnel.sh --logs
+bash deploy/linux/tunnel.sh --url
+```
+
+**One trap it disarms for you.** Vite refuses requests whose `Host` header it
+does not recognise — that is what stops a stranger's DNS record from pointing at
+your machine. Through a tunnel the `Host` *is* the public hostname, so it must
+be named or every request answers `Blocked request. This host is not allowed`,
+which looks exactly like a broken tunnel and is not one. `tunnel.sh` adds the
+hostname to `WALK_HOSTS` in the env file and restarts the studio. Setting it by
+hand works too:
+
+```
+WALK_HOSTS=studio.your-domain.ir,build.your-domain.ir
+```
+
+**And one it does not.** Once the studio has a public hostname, `WALK_TOKEN` is
+the only door, and it is a bolt rather than a security system — one shared
+secret, no identity, no revocation short of changing it for everybody. If more
+than one person ever needs in, put Cloudflare Access in front of the hostname
+(Zero Trust → Access → Applications → Self-hosted). It is free at this size and
+gives you named people you can remove one at a time.
+
 ## Publishing to StoqS
 
 `npm run build` produces a bundle you can hand to anybody. This is the other
