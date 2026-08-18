@@ -22,6 +22,7 @@
 
       <div class="group">
         <span id="progress" class="progress"></span>
+        <button id="undo" class="btn" title="Undo the last change (Cmd/Ctrl+Z)" disabled>Undo</button>
         <button id="save" class="btn btn--primary" title="Anchor this node and move on">Save &amp; next</button>
       </div>
     </header>
@@ -50,13 +51,33 @@
     </div>
 
     <footer class="bar bar--bottom">
-      <span class="slider-label">sight</span>
+      <div class="modes" role="group" aria-label="What a click on the plan does">
+        <button id="mode-sight" class="btn is-on" data-mode="sight" title="Sight a neighbour (1)">Sight</button>
+        <button id="mode-place" class="btn" data-mode="place" title="Put this node on the plan (2)">Place</button>
+        <button id="mode-link" class="btn" data-mode="link" title="Connect this node to any other (3)">Link</button>
+        <button id="mode-add" class="btn" data-mode="add" title="Create a node where you click (4)">Add</button>
+      </div>
+
       <select id="target" class="select" aria-label="Which neighbour you are looking at"></select>
       <button id="record" class="btn">Record sighting</button>
+      <button id="photo" class="btn" title="Give this node a photograph">Photo…</button>
+
       <span id="hint" class="design__hint"></span>
       <span id="calibration" class="tag" hidden></span>
+      <button id="recalibrate" class="btn" title="Measure the handedness again" hidden>Re-calibrate</button>
       <button id="skip" class="btn" title="Leave this node alone and move on">Skip</button>
     </footer>
+
+    <aside id="library" class="library" hidden>
+      <header class="library__head">
+        <span>Photographs — click one to give it to node <strong id="library-node"></strong></span>
+        <button id="library-close" class="btn" aria-label="Close">&times;</button>
+      </header>
+      <div id="library-strip" class="library__strip"></div>
+      <p class="library__hint">
+        A photograph already on another node moves here — one node, one picture.
+      </p>
+    </aside>
 
     <div id="status" class="status" hidden></div>
 

@@ -182,6 +182,26 @@ a neighbour, and draws the line to it:
 That one act anchors the node. Every other arrow at 05 then falls out of the
 plan, and 144 judgements become 42.
 
+### Four things you can do without leaving it
+
+A node that cannot be anchored is usually missing something, and finding that
+out happens while you are standing in it — so the fix is in the same screen.
+The buttons along the bottom decide what a click on the plan does:
+
+| | |
+|---|---|
+| **Sight** | turn to a neighbour and record it. This is the actual job |
+| **Place** | put this node on the plan — nothing can be measured without a position |
+| **Link** | connect this node to **any** other. Numbering means nothing: 01 next to 37 is a doorway if the building says so |
+| **Add** | create a node where you click, for a shooting point nobody made a node for |
+
+**Photo…** gives the node a picture from the tour's own library and builds it,
+which is the other reason a node cannot be worked on.
+
+**Undo** (or `Cmd`/`Ctrl+Z`) reverses the last of any of these — an anchor, a
+link, a placement, a photograph. Each step knows how to put back exactly what it
+changed rather than reloading and hoping.
+
 ### What it writes
 
 Only `planNorth` in `alignment.json` — the panorama's own angle that points at
@@ -205,6 +225,13 @@ sign, the frames are mirrored. The verdict is stored once per tour as
 `"mirrored"` in `tour.json`, and the tool reports the residual between the two
 sightings — a few degrees is aiming error, twenty means a map point is wrong or
 one sighting was on the wrong doorway. It says so rather than averaging it away.
+
+**A "mirrored" verdict is worth distrusting.** Nearly every 360 camera writes
+the usual handedness, so that answer is far more often a misplaced dot or a
+sighting on the wrong doorway than a genuinely mirrored camera — and applying it
+quietly would mirror every arrow in the tour. The tool stops and says so, and
+**Re-calibrate** throws the verdict away so it can be measured again from two
+doorways further apart.
 
 ### What it cannot do
 

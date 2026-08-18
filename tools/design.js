@@ -26,7 +26,7 @@ import '@photo-sphere-viewer/core/index.css';
 import { floorplanUrl, dataUrl, panoUrl } from '../src/lib/paths.js';
 import { loadTourData } from '../src/lib/tour-data.js';
 import { detectMirrored, planBearing, planNorthFromSighting } from '../src/lib/geometry.js';
-import { downloadJson, saveData } from './save.js';
+import { downloadJson, saveData, withTour } from './save.js';
 import { mountNav } from './nav.js';
 import { announceNode, connectFrame } from './frame.js';
 
@@ -58,6 +58,14 @@ const el = {
   hint: document.getElementById('hint'),
   calibration: document.getElementById('calibration'),
   status: document.getElementById('status'),
+  undo: document.getElementById('undo'),
+  photo: document.getElementById('photo'),
+  library: document.getElementById('library'),
+  libraryNode: document.getElementById('library-node'),
+  libraryStrip: document.getElementById('library-strip'),
+  libraryClose: document.getElementById('library-close'),
+  modes: [...document.querySelectorAll('[data-mode]')],
+  recalibrate: document.getElementById('recalibrate'),
 };
 
 let tourData = null;
@@ -75,6 +83,42 @@ let mirrored = null;
 /** Sightings taken at the node in view, not yet committed. */
 let sightings = [];
 
+/**
+ * The tour's edge list, held here rather than read out of the generated graph.
+ *
+ * Neighbours have to be editable from this page — realising a node connects to
+ * nowhere is something that happens while you are standing in it — and reading
+ * them from nodes.json would mean a rebuild between drawing a link and being
+ * able to sight along it.
+ */
+let links = { edges: [] };
+
+/** What a click on the plan does: sight a neighbour, place this node, or link it. */
+let mode = 'sight';
+
+/**
+ * Reversible steps, most recent last.
+ *
+ * Every entry knows how to put back exactly what it changed. Anchoring, linking
+ * and assigning a photograph are all one press away from each other here, and
+ * one press away from being wrong.
+ */
+const history = [];
+
+/** Whether a map point has moved since the last save. */
+let mapDirty = false;
+
+/**
+ * Whether a panorama swap is still in flight.
+ *
+ * Photo Sphere Viewer's `panorama-error` is asynchronous, so a failure from the
+ * load *before* this one can arrive after the current one has succeeded. Acting
+ * on it would put "this node has no panorama" back over a panorama that is on
+ * screen — which is what happened the first time a photograph was assigned from
+ * the library.
+ */
+let loadingPanorama = false;
+
 start();
 
 async function start() {
@@ -88,6 +132,7 @@ async function start() {
   if (!tour) return;
 
   await loadAlignment();
+  links = (await loadLinks()) ?? { edges: [] };
 
   current = initialNode();
   buildNodeOptions();
@@ -132,6 +177,16 @@ async function loadAlignment() {
   }
 }
 
+/** The tour's edges. A tour nobody has linked yet simply has none. */
+async function loadLinks() {
+  try {
+    const response = await fetch(dataUrl('links'));
+    return response.ok ? await response.json() : { edges: [] };
+  } catch {
+    return { edges: [] };
+  }
+}
+
 function loadPlan() {
   return new Promise((resolve) => {
     el.plan.addEventListener('load', () => { fitPlan(); resolve(); }, { once: true });
@@ -163,6 +218,8 @@ async function openNode(node) {
   const url = panoUrl(node, RENDITION);
   const pan = alignment.get(node)?.pan ?? 0;
 
+  loadingPanorama = true;
+
   try {
     if (!viewer) {
       viewer = new Viewer({
@@ -176,8 +233,13 @@ async function openNode(node) {
       });
       window.__viewer = viewer; // dev handle, same as the other tools
       viewer.addEventListener('position-updated', syncSightLabel);
-      viewer.addEventListener('panorama-error', () => showMissingPanorama(node));
+      viewer.addEventListener('panorama-error', () => {
+        if (!loadingPanorama) return;
+        loadingPanorama = false;
+        showMissingPanorama(current);
+      });
       viewer.addEventListener('panorama-loaded', () => {
+        loadingPanorama = false;
         hideStatus();
         setEnabled(true);
       });
@@ -187,10 +249,12 @@ async function openNode(node) {
         position: { yaw: 0, pitch: 0 },
         showLoader: true,
       });
+      loadingPanorama = false;
       hideStatus();
       setEnabled(true);
     }
   } catch {
+    loadingPanorama = false;
     showMissingPanorama(node);
     return;
   }
@@ -208,7 +272,8 @@ async function openNode(node) {
 function setEnabled(enabled) {
   const usable = enabled && targets().length > 0 && hasPoint(current);
   for (const control of [el.record, el.save, el.target]) control.disabled = !usable;
-  el.crosshair.hidden = !usable;
+  el.modes.find((b) => b.dataset.mode === 'link').disabled = !hasPoint(current);
+  el.crosshair.hidden = !usable || mode !== 'sight';
   document.body.classList.toggle('is-blocked', !usable);
   syncHint();
 }
@@ -227,13 +292,18 @@ function showMissingPanorama(node) {
  * Sighting
  * ------------------------------------------------------------------ */
 
+/** Everything this node is connected to, however it was numbered. */
+function neighbours(node = current) {
+  return links.edges
+    .filter((edge) => edge.includes(node))
+    .map((edge) => (edge[0] === node ? edge[1] : edge[0]))
+    .filter((n) => NODES.includes(n));
+}
+
 /** Neighbours of a node that are on the plan, so have a bearing to them. */
 function targets(node = current) {
   if (!hasPoint(node)) return [];
-
-  return (tour.nodes[pad(node)]?.links ?? [])
-    .map((link) => Number(link.node))
-    .filter((n) => NODES.includes(n) && hasPoint(n));
+  return neighbours(node).filter(hasPoint);
 }
 
 /** A node that can be worked on at all: it is placed and has somewhere to sight. */
@@ -295,10 +365,30 @@ function settleHandedness() {
 
   mirrored = verdict.mirrored;
   el.calibration.hidden = false;
-  el.calibration.dataset.kind = verdict.residual > MAX_RESIDUAL ? 'warn' : 'ok';
+  el.calibration.dataset.kind = verdict.mirrored || verdict.residual > MAX_RESIDUAL ? 'warn' : 'ok';
   el.calibration.textContent = verdict.mirrored
     ? `mirrored panoramas — residual ${verdict.residual}°`
     : `normal panoramas — residual ${verdict.residual}°`;
+  el.recalibrate.hidden = false;
+
+  // Mirrored is the rare answer. Consumer 360 cameras write the usual
+  // handedness, so this verdict is much more often a wrong map point or a
+  // sighting on the wrong doorway than a genuinely mirrored camera. Said out
+  // loud rather than applied quietly, because applying it quietly would mirror
+  // every arrow in the tour.
+  if (verdict.mirrored) {
+    showStatus(
+      '<strong>This measured as mirrored.</strong><br /><br />' +
+        `Two sightings ${verdict.separation}° apart, disagreeing by ${verdict.residual}°.<br /><br />` +
+        'Mirrored panoramas are rare — nearly every 360 camera writes the usual ' +
+        'way round. It is far more likely that one of these nodes is in the wrong ' +
+        'place on the plan, or that a sighting landed on the wrong doorway.<br /><br />' +
+        'Check the two dots against the drawing, then <strong>Re-calibrate</strong> ' +
+        'and sight two doorways as far apart as you can find.',
+      'warn',
+    );
+    return;
+  }
 
   if (verdict.residual > MAX_RESIDUAL) {
     showStatus(
@@ -330,13 +420,26 @@ async function saveAndNext() {
   }
 
   const planNorth = planNorthFromSighting({ ...sightings[0], mirrored });
+  const node = current;
+  const before = alignment.get(node) ?? null;
 
   // pan is set to the anchor so the sphere opens plan-aligned: yaw 0 looks at
   // the top of the drawing. That also puts the mini-map's facing cone the right
   // way round, which "any consistent direction" never guaranteed.
-  alignment.set(current, { pan: round(planNorth), planNorth: round(planNorth) });
+  alignment.set(node, { pan: round(planNorth), planNorth: round(planNorth) });
 
-  if (!(await persist())) return;
+  if (!(await persist())) {
+    if (before) alignment.set(node, before);
+    else alignment.delete(node);
+    return;
+  }
+
+  remember(`anchor ${pad(node)}`, async () => {
+    if (before) alignment.set(node, before);
+    else alignment.delete(node);
+    await persist({ quiet: true });
+    if (current === node) await openNode(node);
+  });
 
   const next =
     NODES.find((n) => n > current && workable(n) && !isAnchored(n)) ??
@@ -350,7 +453,14 @@ async function saveAndNext() {
   await openNode(next);
 }
 
-async function persist() {
+/**
+ * Writes the anchors and the edge list.
+ *
+ * Both together: links drawn here change which neighbours can be sighted, so
+ * saving one without the other leaves a tour whose anchors refer to
+ * connections that were never recorded.
+ */
+async function persist({ quiet = false } = {}) {
   const payload = {};
   for (const n of NODES) {
     const entry = alignment.get(n);
@@ -366,6 +476,23 @@ async function persist() {
     return false;
   }
 
+  const edges = await saveData('links', links);
+  if (!edges.ok) {
+    downloadJson('links.json', links);
+    toast('Links could not be saved — downloaded instead', 'error');
+    return false;
+  }
+
+  if (mapDirty) {
+    const points = await saveData('nodes', tour);
+    if (!points.ok) {
+      downloadJson('nodes.json', tour);
+      toast('Map points could not be saved — downloaded instead', 'error');
+      return false;
+    }
+    mapDirty = false;
+  }
+
   // The handedness belongs to the tour, not to a node, and it is only measured
   // once. Written on the first save so a later session does not re-ask.
   if (tourData.config.mirrored !== mirrored) {
@@ -373,8 +500,289 @@ async function persist() {
     await saveData('tour', tourData.config);
   }
 
-  toast(`Anchored ${pad(current)}`);
+  if (!quiet) toast(`Anchored ${pad(current)}`);
   return true;
+}
+
+/* ------------------------------------------------------------------ *
+ * Linking
+ * ------------------------------------------------------------------ */
+
+/**
+ * Connects the current node to any other, or disconnects them.
+ *
+ * Any node to any node: numbering says nothing about what is walkable. Node 01
+ * next to node 37 is a doorway if the building says so, and the roster having
+ * gaps in it changes nothing.
+ */
+function toggleLink(other) {
+  if (other === current) return;
+
+  const [a, b] = [current, other].sort((x, y) => x - y);
+  const at = links.edges.findIndex(([x, y]) => x === a && y === b);
+
+  if (at === -1) {
+    links.edges.push([a, b]);
+    links.edges.sort((p, q) => p[0] - q[0] || p[1] - q[1]);
+    remember(`link ${pad(a)}–${pad(b)}`, () => {
+      const undoAt = links.edges.findIndex(([x, y]) => x === a && y === b);
+      if (undoAt !== -1) links.edges.splice(undoAt, 1);
+    });
+    toast(`Linked ${pad(a)} ↔ ${pad(b)}`);
+  } else {
+    const [removed] = links.edges.splice(at, 1);
+    remember(`unlink ${pad(a)}–${pad(b)}`, () => {
+      links.edges.push(removed);
+      links.edges.sort((p, q) => p[0] - q[0] || p[1] - q[1]);
+    });
+    toast(`Unlinked ${pad(a)} ↔ ${pad(b)}`);
+  }
+
+  buildTargetOptions();
+  setEnabled(true);
+  drawPlan();
+  syncChrome();
+}
+
+/**
+ * Creates a node where the plan was clicked.
+ *
+ * A shooting point nobody has a node for turns up while walking the tour, not
+ * while looking at a list, so it can be added from here too.
+ */
+async function addNodeHere(point) {
+  // Adding rewrites the roster on disk and the reload below replaces what is in
+  // memory, so anything unsaved goes out first rather than being lost.
+  if (!(await persist({ quiet: true }))) return;
+
+  const result = await post('/add-node-at', { x: Math.round(point.x), y: Math.round(point.y) });
+  if (result.error) {
+    toast(result.error, 'error');
+    return;
+  }
+
+  tourData = await loadTourData();
+  NODES = tourData.numbers();
+  tour = await loadNodes();
+  links = (await loadLinks()) ?? { edges: [] };
+
+  buildNodeOptions();
+  await openNode(Number(result.node));
+  setMode('link');
+  toast(`Added ${result.node} — now link it to something`);
+}
+
+/**
+ * Puts the current node where the plan was clicked.
+ *
+ * Here as well as in the map tool, because realising a node is not on the plan
+ * happens while you are standing in it looking for something to sight.
+ */
+function placeHere(point) {
+  const node = current;
+  const id = pad(node);
+  const before = tour.nodes[id]?.map ? { ...tour.nodes[id].map } : null;
+
+  tour.nodes[id] ??= { id, links: [] };
+  tour.nodes[id].map = { x: Math.round(point.x), y: Math.round(point.y) };
+  mapDirty = true;
+
+  remember(`place ${id}`, () => {
+    if (before) tour.nodes[id].map = before;
+    else delete tour.nodes[id].map;
+    mapDirty = true;
+  });
+
+  buildTargetOptions();
+  setEnabled(true);
+  drawPlan();
+  syncChrome();
+  toast(`Placed ${id}`);
+}
+
+/** The node whose dot covers a point on the plan, if any. */
+function nodeAt(point) {
+  const reach = Math.max(14, el.plan.naturalWidth / 90);
+
+  for (const n of NODES) {
+    const p = tour.nodes[pad(n)]?.map;
+    if (!p) continue;
+    if (Math.hypot(p.x - point.x, p.y - point.y) <= reach) return n;
+  }
+
+  return null;
+}
+
+function onPlanClick(event) {
+  const rect = el.plan.getBoundingClientRect();
+  const point = {
+    x: ((event.clientX - rect.left) / rect.width) * el.plan.naturalWidth,
+    y: ((event.clientY - rect.top) / rect.height) * el.plan.naturalHeight,
+  };
+
+  // Add and Place act on the point itself — an empty patch of plan is exactly
+  // where a node goes, so they must not require a dot under the cursor.
+  if (mode === 'add') return addNodeHere(point);
+  if (mode === 'place') return placeHere(point);
+
+  const hit = nodeAt(point);
+  if (hit === null) return;
+
+  if (mode === 'link') return toggleLink(hit);
+
+  // In sight mode a dot is a quicker way to choose the target than the list.
+  if (targets().includes(hit)) {
+    el.target.value = String(hit);
+    drawPlan();
+    syncHint();
+  }
+}
+
+function setMode(next) {
+  mode = next;
+  for (const button of el.modes) button.classList.toggle('is-on', button.dataset.mode === mode);
+  el.target.hidden = mode !== 'sight';
+  el.record.hidden = mode !== 'sight';
+  drawPlan();
+  syncHint();
+}
+
+/* ------------------------------------------------------------------ *
+ * The photo library
+ * ------------------------------------------------------------------ */
+
+/**
+ * Gives the current node a photograph without going back to the studio.
+ *
+ * A node with no picture cannot be sighted at all, and finding that out is
+ * something that happens here — so the fix is here too.
+ */
+async function openLibrary() {
+  el.library.hidden = false;
+  el.libraryNode.textContent = pad(current);
+  el.libraryStrip.innerHTML = '<p class="library__empty">Loading…</p>';
+
+  const photos = await fetchPhotos();
+
+  if (!photos.length) {
+    el.libraryStrip.innerHTML =
+      '<p class="library__empty">No photographs found. Check the tour\u2019s ' +
+      '<code>rawDir</code> in its tour.json.</p>';
+    return;
+  }
+
+  el.libraryStrip.innerHTML = photos
+    .map(
+      (photo) => `
+      <figure class="chip ${photo.node === pad(current) ? 'is-current' : ''}"
+              data-file="${escapeHtml(photo.file)}"
+              title="${photo.node ? `currently node ${photo.node}` : 'unassigned'}">
+        <img src="${withTour('/preview', { file: photo.file })}" alt="" loading="lazy" />
+        <figcaption>${escapeHtml(photo.file)}${photo.node ? ` · ${photo.node}` : ''}</figcaption>
+      </figure>`,
+    )
+    .join('');
+
+  for (const chip of el.libraryStrip.children) {
+    chip.addEventListener?.('click', () => assignPhoto(chip.dataset.file));
+  }
+}
+
+async function fetchPhotos() {
+  try {
+    const response = await fetch(withTour('/photos'));
+    const data = await response.json();
+    return data.photos ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Assigns a photograph and builds it.
+ *
+ * Assigning alone would leave the node pointing at a file with no renditions,
+ * which reads exactly like a broken node, so the pipeline runs before the
+ * panorama is reloaded.
+ */
+async function assignPhoto(file) {
+  const node = current;
+  const previous = (await fetchPhotos()).find((p) => p.node === pad(node))?.file ?? null;
+
+  el.libraryStrip.querySelectorAll('.chip').forEach((c) => c.classList.add('is-busy'));
+  toast(`Assigning ${file}…`);
+
+  const assigned = await post('/assign', { node, file });
+  if (assigned.error) {
+    toast(assigned.error, 'error');
+    return;
+  }
+
+  toast('Building renditions…');
+  const built = await post('/process', { node });
+
+  if (built.ok === false || built.error) {
+    showStatus(
+      `<strong>Could not build node ${pad(node)}.</strong><br /><br /><code>${escapeHtml(
+        built.error ?? built.output ?? '',
+      )}</code>`,
+      'error',
+    );
+    return;
+  }
+
+  remember(`photo ${file} → ${pad(node)}`, async () => {
+    await post('/assign', { node, file: previous });
+    if (previous) await post('/process', { node });
+    if (current === node) await openNode(node);
+  });
+
+  el.library.hidden = true;
+  await openNode(node);
+  toast(`Node ${pad(node)} now uses ${file}`);
+}
+
+/* ------------------------------------------------------------------ *
+ * Undo
+ * ------------------------------------------------------------------ */
+
+function remember(label, undo) {
+  history.push({ label, undo });
+  syncUndo();
+}
+
+async function undoLast() {
+  const step = history.pop();
+  if (!step) return;
+
+  el.undo.disabled = true;
+  await step.undo();
+
+  buildTargetOptions();
+  drawPlan();
+  syncChrome();
+  syncUndo();
+  toast(`Undid ${step.label}`);
+}
+
+function syncUndo() {
+  el.undo.disabled = history.length === 0;
+  el.undo.title = history.length
+    ? `Undo ${history[history.length - 1].label} (Cmd/Ctrl+Z)`
+    : 'Nothing to undo';
+}
+
+async function post(endpoint, payload) {
+  try {
+    const response = await fetch(withTour(endpoint), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return await response.json();
+  } catch (err) {
+    return { error: err.message };
+  }
 }
 
 /* ------------------------------------------------------------------ *
@@ -390,6 +798,20 @@ function drawPlan() {
   const r = Math.max(6, w / 180);
   const here = tour.nodes[pad(current)]?.map;
   const to = Number.isFinite(target()) ? tour.nodes[pad(target())]?.map : null;
+
+  // Every connection, so what you are about to link to — and what is already
+  // linked — is visible rather than remembered.
+  const edges = links.edges
+    .map(([a, b]) => {
+      const p = tour.nodes[pad(a)]?.map;
+      const q = tour.nodes[pad(b)]?.map;
+      if (!p || !q) return '';
+      const here = a === current || b === current;
+      return `<line class="plan-edge ${here ? 'is-live' : ''}"
+                    x1="${p.x}" y1="${p.y}" x2="${q.x}" y2="${q.y}"
+                    stroke-width="${here ? r / 2 : r / 3}" />`;
+    })
+    .join('');
 
   const sightLines = sightings
     .map((s) => {
@@ -419,7 +841,7 @@ function drawPlan() {
     })
     .join('');
 
-  el.overlay.innerHTML = sightLines + aim + dots;
+  el.overlay.innerHTML = edges + sightLines + aim + dots;
 }
 
 function fitPlan() {
@@ -477,6 +899,7 @@ function syncChrome() {
 
   el.prev.disabled = NODES.indexOf(current) === 0;
   el.next.disabled = NODES.indexOf(current) === NODES.length - 1;
+  el.recalibrate.hidden = mirrored === null;
   el.progress.textContent = `${anchored}/${NODES.length} anchored`;
   el.progress.dataset.complete = String(anchored === NODES.length);
 
@@ -484,6 +907,29 @@ function syncChrome() {
 }
 
 function syncHint() {
+  if (mode === 'add') {
+    el.hint.innerHTML =
+      'Click the plan to create a node there. It arrives with no photograph and ' +
+      'no links, and drops you into <strong>Link</strong> so it does not stay ' +
+      'stranded.';
+    return;
+  }
+
+  if (mode === 'place') {
+    el.hint.innerHTML =
+      `Click the plan where <strong>${pad(current)}</strong> was photographed. ` +
+      'Everything else here is measured off that position, so it is worth being exact.';
+    return;
+  }
+
+  if (mode === 'link') {
+    el.hint.innerHTML =
+      `Click any node on the plan to connect it to <strong>${pad(current)}</strong>, ` +
+      'or click a connected one to break the link. Any node to any node — the ' +
+      'numbers mean nothing here.';
+    return;
+  }
+
   if (!hasPoint(current)) {
     el.hint.innerHTML =
       '<strong>Not on the plan.</strong> Place it in the map tool first — ' +
@@ -492,12 +938,12 @@ function syncHint() {
   }
 
   if (!targets().length) {
-    const links = (tour.nodes[pad(current)]?.links ?? []).length;
+    const count = neighbours(current).length;
     el.hint.innerHTML =
       `<strong>Nothing to sight from here.</strong> This node ${
-        links ? 'links only to nodes that are not on the plan yet' : 'has no links at all'
-      }. Draw one to a placed node in the map tool (&#9776; &rarr; Map, press 3), ` +
-      'then <strong>Rebuild</strong>.';
+        count ? 'connects only to nodes that are not on the plan yet' : 'has no links at all'
+      }. Switch to <strong>Link</strong> and click any node on the plan — ` +
+      'numbering does not matter, only whether you can walk between them.';
     return;
   }
 
@@ -558,12 +1004,41 @@ function wire() {
   el.record.addEventListener('click', record);
   el.save.addEventListener('click', saveAndNext);
   el.skip.addEventListener('click', () => step(1));
+  el.undo.addEventListener('click', undoLast);
+  el.plan.addEventListener('click', onPlanClick);
+  el.photo.addEventListener('click', openLibrary);
+  el.libraryClose.addEventListener('click', () => { el.library.hidden = true; });
+
+  el.recalibrate.addEventListener('click', () => {
+    mirrored = null;
+    sightings = [];
+    el.calibration.hidden = true;
+    hideStatus();
+    drawPlan();
+    syncChrome();
+    toast('Handedness cleared — sight two doorways again');
+  });
+
+  for (const button of el.modes) {
+    button.addEventListener('click', () => setMode(button.dataset.mode));
+  }
 
   window.addEventListener('resize', fitPlan);
 
   window.addEventListener('keydown', (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
+      event.preventDefault();
+      undoLast();
+      return;
+    }
+
     if (event.target.matches('input, select')) return;
 
+    if (event.key === 'Escape') { el.library.hidden = true; }
+    if (event.key === '1') setMode('sight');
+    if (event.key === '2') setMode('place');
+    if (event.key === '3') setMode('link');
+    if (event.key === '4') setMode('add');
     if (event.key === 'PageUp') { event.preventDefault(); step(-1); }
     if (event.key === 'PageDown') { event.preventDefault(); step(1); }
     if (event.key === 'Enter') { event.preventDefault(); saveAndNext(); }

@@ -1277,3 +1277,55 @@ body {
 .status[data-kind="warn"] {
   border-color: var(--warn);
 }
+
+/* ---------- the photo library, inside design mode ---------- */
+
+.library {
+  position: fixed;
+  right: 0;
+  bottom: var(--bar-h);
+  left: 0;
+  z-index: 50;
+  max-height: 46vh;
+  padding: 10px 12px;
+  border-top: 1px solid var(--line);
+  background: #171a21;
+  box-shadow: 0 -18px 50px rgba(0, 0, 0, 0.5);
+  overflow-y: auto;
+}
+
+.library__head {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.library__strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.library__hint,
+.library__empty {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* The picture this node already has. */
+.library .chip.is-current {
+  outline: 2px solid var(--accent);
+}
+
+.library .chip.is-busy {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.design-body .plan {
+  cursor: crosshair;
+}
