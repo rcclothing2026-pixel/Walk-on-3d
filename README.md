@@ -1,13 +1,18 @@
-# Walk on 3D — 360° virtual tour
+# Walk on 3D — 360° virtual tours
 
-A self-contained 360° virtual tour of a historic courtyard complex: 43
-equirectangular panoramas linked as a walkable node graph, with a floor-plan
-mini-map and clickable brand markers.
+Turns a set of 360° photographs and a floor plan into a walkable virtual tour:
+panoramas linked as a node graph, a floor-plan mini-map, clickable brand
+markers, Persian RTL interface.
 
-Ships as a static bundle that drops into an existing Laravel 11 app at
-`public/tour/`. No server-side rendering, no build-time API calls.
+Each tour ships as a **self-contained static bundle** — a directory that can be
+dropped into an existing Laravel app at `public/tour/`, or handed to whoever is
+paying for it and served from anywhere. No server-side rendering, no build-time
+API calls.
 
-UI language is Persian, RTL.
+**Any venue, no code changes.** A tour is a folder under `tours/<slug>/` that
+owns its own roster, floor plan, link graph and brands. Adding a second venue is
+a folder, not a fork. The first tour in this repo is `hammam`, a historic
+courtyard bathhouse complex.
 
 ## Status
 
@@ -19,10 +24,11 @@ UI language is Persian, RTL.
 | 4 | Viewer | **done — awaiting review** |
 | 5 | Mobile & polish | **done — awaiting review** |
 | 6 | Deployment | **done — awaiting review** |
+| 7 | Multi-tour + venue editor | **done — awaiting review** |
 
 ## Setup
 
-Everything runs locally. Nothing is uploaded anywhere — the panoramas never
+Everything runs locally. Nothing is uploaded anywhere — the photographs never
 leave the machine.
 
 ```bash
@@ -31,38 +37,90 @@ npm run dev
 ```
 
 Then open **http://localhost:5173/tour/tools/studio.html** — the studio is the
-front door: it shows what is done and what is not, and links into the right
-tool for the next missing step.
+front door: it lists the venues, shows what is done and what is not, and links
+into the right tool for the next missing step.
 
-The tour itself is at `/tour/`. Node 22+ and `npm install` is the whole setup;
-sharp ships prebuilt binaries, so there is no native toolchain to install.
-`poppler` is needed only to re-cut the floor plan from a revised PDF.
+Node 22+ and `npm install` is the whole setup; sharp ships prebuilt binaries, so
+there is no native toolchain. `poppler` (`pdftoppm`) is needed only to cut a
+floor plan out of an architect's PDF.
 
-The dev server serves the tour at **`/tour/`**, matching where it lives in
-production, so a path that works locally works deployed. The tools are at
-`/tour/tools/align.html`, `/tour/tools/hotspots.html` and `/tour/tools/map.html`.
+The dev server serves everything under **`/tour/`**, matching where it lives in
+production, so a path that works locally works deployed. Every page and every
+API call carries `?tour=<slug>`:
 
-`sharp` is the only heavy dependency and ships prebuilt binaries; no native
-toolchain needed.
+| | |
+|---|---|
+| the studio | `/tour/tools/studio.html?tour=hammam` |
+| the tour | `/tour/?tour=hammam` |
+| the tools | `/tour/tools/{align,hotspots,map}.html?tour=hammam` |
+
+## A new venue, start to finish
+
+Nothing below needs a terminal after `npm run dev`.
+
+1. **Create the tour.** In the studio, **+ Tour** — a slug and a title. That
+   writes `tours/<slug>/` with an empty roster.
+2. **Upload the floor plan.** Open `tools/map.html`, press **Floor plan…** and
+   pick a PNG, a JPG, or the architect's PDF. A PDF is rendered and cropped to
+   the drawing automatically.
+3. **Place the shooting points.** In **Add** mode, click the plan once per
+   camera position. Each click creates a node and places it in one action.
+4. **Draw the links.** In **Link** mode, click a node then the node you can walk
+   to from it. Clicking the same pair again removes the link. **Rebuild** turns
+   the links into arrows.
+5. **Assign the photographs.** Back in the studio, drag each thumbnail onto its
+   node, rename the nodes, then **process** to build the renditions.
+6. **Align and aim.** `tools/align.html` sets each panorama's north;
+   `tools/hotspots.html` puts each arrow where the doorway actually is.
+7. **Build.** `npm run build` emits `dist/<slug>/` — that directory *is* the
+   deliverable.
+
+Steps 2–4 are the venue editor; step 5 is the studio; steps 6–7 are unchanged
+from a single-tour build.
+
+## Where a tour lives
+
+```
+tours/<slug>/
+  tour.json        title, start node, where the photographs are, map cutoff
+  names.json       the roster — which nodes exist, and their names
+  links.json       which nodes connect to which
+  nodes.json       generated: the graph the viewer walks
+  alignment.json   each panorama's north
+  brands.json      brand pins
+  floorplan.png    the mini-map drawing
+panos/<slug>/      generated renditions — hundreds of MB, never committed
+dist/<slug>/       the built bundle for that venue
+```
+
+`panos/` sits outside `tours/` on purpose: it is the only part measured in
+hundreds of megabytes, and nothing that large should be inside the folder that
+describes a venue.
 
 ## The studio
 
-`/tour/tools/studio.html` — one screen, all 43 nodes, four columns of state:
-photo in `raw/`, renditions built, alignment recorded, arrows picked, position
-on the plan. Each row links into the tool that does the next missing step, at
-that node, plus a **rebuild** button for when a photo has been replaced.
+`/tour/tools/studio.html` — a venue picker, then one screen per venue: every
+node, with columns of state — photo assigned, renditions built, alignment
+recorded, arrows picked, position on the plan. Each row links into the tool that
+does the next missing step, at that node, plus a **rebuild** button for when a
+photo has been replaced.
 
-The tools **save straight to `src/data/`**; there is no download-and-move step.
-That runs through a small API in `scripts/dev-api.js` mounted on the Vite dev
-server.
+It is also where the roster is edited: **drag a thumbnail onto a node** to
+assign that photograph, rename a node in place, add a node, remove one. Photos
+that belong to no node sit in a tray at the bottom.
 
-That API is **development only** — the plugin declares `apply: 'serve'`, so
-none of it exists in `npm run build` or in the deployed bundle. It writes to
-disk and spawns the image pipeline, so it has to stay that way. Everything it
-can touch is fixed up front: writes go only to the three whitelisted files in
-`src/data/`, and the only process it spawns is the pipeline with a node number
-validated against the roster and passed as an argv element, never through a
-shell.
+The tools **save straight into `tours/<slug>/`**; there is no download-and-move
+step. That runs through a small API in `scripts/dev-api.js` mounted on the Vite
+dev server.
+
+That API is **development only** — the plugin declares `apply: 'serve'`, so none
+of it exists in `npm run build` or in the deployed bundle. It writes to disk and
+spawns the image pipeline, so it has to stay that way. Everything it can touch
+is fixed up front: every request is scoped to one `?tour=` slug, slugs are
+validated against a strict pattern so none can climb out of `tours/`, writes go
+only to that tour's whitelisted files, and the only processes it spawns are this
+project's own scripts, with arguments passed as argv elements and never through
+a shell.
 
 If the API is unreachable the tools fall back to downloading the JSON, so they
 still work if opened without the dev server.
@@ -71,8 +129,10 @@ still work if opened without the dev server.
 
 The pipeline is incremental, so fixing one bad panorama is cheap:
 
-1. Drop the corrected export over `raw/17.jpg`.
-2. Press **rebuild** on that row in the studio (or `npm run process -- --only=17`).
+1. Drop the corrected export into the tour's photo folder, or drag it onto the
+   node in the studio.
+2. Press **rebuild** on that row in the studio (or
+   `npm run process -- --tour=hammam --only=17`).
 3. Re-check its alignment and arrows if the camera moved.
 
 Nothing else is touched.
@@ -162,9 +222,8 @@ node. The tour never displays an absolute bearing, so only consistency matters.
 
 `?node=17` opens the tool straight at a node. **PgUp/PgDn** step through them.
 
-When you are done, **Download** and save the file to `src/data/alignment.json`.
-The tool reads that file back on load, so alignment can be done across several
-sittings. Nodes you have not visited are written as `{ "pan": 0, "todo": true }`
+**Save** writes `tours/<slug>/alignment.json`. The tool reads that file back on
+load, so alignment can be done across several sittings. Nodes you have not visited are written as `{ "pan": 0, "todo": true }`
 so an untouched node can never be mistaken for a deliberate 0°.
 
 Two things worth knowing:
@@ -178,13 +237,16 @@ Two things worth knowing:
 
 ## The floor plan
 
-`public/floorplan.png` is generated from the architect's AutoCAD sheet:
+`tours/<slug>/floorplan.png` is what the mini-map draws and what the venue
+editor measures against. There are two ways to get one there: **Floor plan…** in
+`tools/map.html`, which takes an image or a PDF, or the command line:
 
 ```bash
-npm run floorplan
+npm run floorplan -- --tour=hammam
 ```
 
-Source is `docs/blueprint-basement-r3.pdf` — an A3 sheet titled
+The hammam's is cut from the architect's AutoCAD sheet,
+`tours/hammam/blueprint.pdf` — an A3 sheet titled
 **زیر زمین ‑ حمام** (basement / hammam), showing the main level at −5.00, the
 حیاط خلوت courtyard and WC at −3.20, and the entrance staircase arriving at
 ±0.00. That matches the tour's shape: nodes 1–3 descend a staircase, and the
@@ -200,9 +262,9 @@ still works. Output is a 16-colour palette PNG, which is plenty for a line
 drawing and about 4× smaller than greyscale.
 
 ```bash
-npm run floorplan -- --pdf=docs/blueprint-r4.pdf   # a revised sheet
-npm run floorplan -- --width=2400 --dpi=600        # more resolution
-npm run floorplan -- --keep-render                 # keep the full page to inspect
+npm run floorplan -- --tour=hammam --pdf=blueprint-r4.pdf   # a revised sheet
+npm run floorplan -- --tour=hammam --width=2400 --dpi=600   # more resolution
+npm run floorplan -- --tour=hammam --keep-render            # keep the full page
 ```
 
 Everything reads the plan through `floorplanUrl()` in `src/lib/paths.js`, so
@@ -228,15 +290,19 @@ until the mini-map exists and it is clear whether they actually hurt.
 
 ## Phase 3 — link graph and hotspots
 
-`src/data/graph.js` holds the link graph in the shape the brief expresses it —
-spine, descent, leaves by anchor, cluster chains — and expands it to a symmetric
-adjacency map.
+`tours/<slug>/links.json` holds the link graph as a flat list of node pairs, and
+`scripts/graph.js` expands it to a symmetric adjacency map. It is **data, not
+code**: a venue's connections are drawn in `tools/map.html`, and nothing about
+the hammam's shape is baked into the build.
 
 ```bash
-npm run nodes            # generate src/data/nodes.json
-npm run nodes -- --check # audit the file on disk, write nothing
-npm run nodes -- --reset # discard picked arrow angles
+npm run nodes -- --tour=hammam   # generate tours/hammam/nodes.json
+npm run nodes -- --check         # audit every tour on disk, write nothing
+npm run nodes -- --tour=hammam --reset   # discard picked arrow angles
 ```
+
+`--check` runs across every tour, because auditing is harmless. Generating
+demands an explicit `--tour=`: writing to a venue picked for you is not.
 
 Re-running **merges**: hand-picked arrow angles and map points survive, only the
 structure is rebuilt.
@@ -262,12 +328,31 @@ to −30° band in the warning colour.
 
 **Tab** cycles targets, **PgUp/PgDn** changes node, **R** resets a link to auto.
 
-### tools/map.html
+### tools/map.html — the venue editor
 
-Click the plan to place each node; placing advances to the next unplaced one so
-the list can be worked straight down. Coordinates are stored in the plan's own
-pixel space, so they survive a re-export at a different size. **Download all**
-writes the merged `nodes.json`.
+Three modes, switched with the buttons or **1** / **2** / **3**:
+
+| | |
+|---|---|
+| **Place** | click the plan to position the selected node; placing advances to the next unplaced one, so the list can be worked straight down |
+| **Add** | click the plan to create a node there — this is how a venue gets its nodes in the first place |
+| **Link** | click a node, then the node you can walk to from it. The same pair again removes the link. **Esc** cancels a half-drawn one |
+
+**Floor plan…** replaces the drawing — PNG, JPG, or the architect's PDF, which
+is rendered and cropped on the way in. If the new plan is a different size and
+points have already been placed, it says so and offers to scale them rather than
+moving them silently: the same drawing re-exported scales cleanly, a different
+drawing does not, and only the operator knows which this is.
+
+**Save** writes `nodes.json` and `links.json` together — they are edited in one
+pass, and saving one without the other leaves a plan whose dots and connections
+disagree. **Rebuild** then regenerates the graph so the new links become arrows.
+
+Coordinates are stored in the plan's own pixel space, so they survive a
+re-export at a different display size.
+
+The page works on a venue that has nothing at all: no floor plan, no nodes, no
+graph. That is the point — it is what produces them.
 
 ## Phase 4–5 — the tour
 
@@ -309,20 +394,23 @@ checking on a real device** before deciding whether to work around it.
 npm run build
 ```
 
-Runs `npm run nodes -- --check` first, so a broken graph fails the build before
-Vite starts. Then Vite builds, and `scripts/bundle.js` prints the bundle weight
-by group and the per-node panorama weight, with the 10-node walk checked against
-the 15 MB budget.
+Runs `npm run nodes -- --check` across every tour first, so a broken graph fails
+the build before Vite starts. Then Vite builds once, and `scripts/bundle.js`
+emits **one directory per venue** — `dist/<slug>/` — printing each bundle's
+weight by group and its per-node panorama weight, with the 10-node walk checked
+against the 15 MB budget.
 
-`dist/` **is** the payload — copy its contents into Laravel's `public/tour/`.
-There is no nesting to unpick, because `public/` maps 1:1 onto the deploy root
-and `base` is `/tour/` in both dev and build.
+`dist/<slug>/` **is** the payload for that venue — copy its contents into
+Laravel's `public/tour/`. There is no nesting to unpick: every path inside a
+bundle is resolved relative to `index.html`, so the same directory works at
+`/tour/`, at a subdirectory, or at the root of its own domain. That is what
+makes a bundle handable to a customer.
 
-Panoramas are **not** in the bundle. They live in `panos/` at the project root,
-outside `publicDir`, precisely so that several hundred megabytes are never
-copied into `dist/`. Upload them to `public/tour/panos/` separately, or to
-object storage with `VITE_IMAGE_BASE_URL` pointing at it. During development a
-small Vite middleware serves `panos/` at `/tour/panos/`.
+Panoramas are **not** in the bundle. They live in `panos/<slug>/` at the project
+root, outside `publicDir`, precisely so that several hundred megabytes are never
+copied into `dist/`. Upload them to `<bundle>/panos/` separately, or to object
+storage with `VITE_PANO_BASE_URL` pointing at it. During development a small
+Vite middleware serves them at `/tour/t/<slug>/panos/`.
 
 Deployment files:
 
@@ -337,23 +425,30 @@ asset hashes), tour JSON on a short TTL because the tools edit it.
 
 ## Image paths
 
-`src/config.js` holds `IMAGE_BASE_URL`, the single place that decides where
-images are fetched from. Everything else goes through `src/lib/paths.js`.
-Moving the panoramas to Arvan Cloud object storage is a one-line change there
-(or `VITE_IMAGE_BASE_URL` at build time).
+`src/config.js` decides where everything is fetched from, and it resolves
+against the page rather than a site root — `BASE_URL` is `'./'` in a built
+bundle, and `/tour/t/<slug>/` in development, where one server hosts every
+venue. Both modes see identical relative paths, which is the point: a path that
+works locally works deployed.
+
+`PANO_BASE_URL` is the one part that can be moved independently, since it is the
+only part measured in hundreds of megabytes. Point `VITE_PANO_BASE_URL` at Arvan
+Cloud object storage at build time and nothing else changes.
 
 `src/lib/paths.js` is imported by both the Node pipeline and the browser
 bundle, so the filename convention cannot drift between the two.
 
 ## Node names
 
-`src/data/names.json` — one line per node. Names flagged `"unconfirmed": true`
-(nodes 08, 12, 33) still need verifying on site.
+`tours/<slug>/names.json` — one line per node, edited from the studio. Names
+flagged `"unconfirmed": true` still need verifying on site; in the hammam that
+is nodes 08, 12 and 33.
 
 Keys are zero-padded (`"01"` … `"43"`) to match the panorama filenames. One
 catch: `Object.keys()` does **not** return them in tour order, because JS hoists
 canonical integer-like keys — `"10"`…`"43"` come out before `"01"`…`"09"`.
-Iterate `1..43` and pad, don't iterate the object.
+Read the roster through `loadRoster()` (Node) or `tourData.numbers()` (browser),
+both of which sort numerically; don't iterate the object.
 
 ## Open questions on the source data
 
@@ -389,9 +484,9 @@ the low range, and the photo is too perspective-distorted to say where with
 confidence.
 
 **Which numbering is authoritative?** Everything downstream keys off the
-answer. Until it is settled, `src/data/names.json` still holds the brief's 43
-nodes, and the node roster is read from that one file (see `src/lib/nodes.js`)
-so switching to the plan's numbering is a single-file edit.
+answer. Until it is settled, `tours/hammam/names.json` still holds the brief's 43
+nodes, and the roster is read from that one file, so switching to the plan's
+numbering is a single-file edit.
 
 Note that `docs/shooting-plan.jpg` is a photo of a physical board, shot at an
 angle, with markers and a legend overlaid. It is reference material only. The
@@ -406,7 +501,9 @@ rather than guessing:
 1. **Node 30 (موسلک) has no links at all.** It appears in the node table but
    in no spine entry, leaf list, or cluster chain, so it is unreachable. It
    most likely belongs on the 35 hub or in the 29/31 cluster, but that is a
-   guess about the physical space.
+   guess about the physical space. **Still open** — every build warns about it.
+   Drawing the edge takes two clicks in `tools/map.html`'s Link mode, but which
+   two nodes is a question about the building, not the data.
 2. **The "fewer than two links" build assertion would fail on 14 nodes, not
    2.** The brief exempts 23 and 43 as true dead ends, but nodes 1, 7, 10, 13,
    15, 17, 18, 20, 25, 28, 34 and 39 also have exactly one link. Most are
@@ -419,7 +516,12 @@ Everything else checks out: 52 edges, all bidirectional, and every node except
 
 ## Ground rules
 
-- `raw/` and `panos/` are not committed.
+- Photographs and `panos/` are not committed.
 - No `localStorage` / `sessionStorage` anywhere.
+- No dependency is added without asking first. `three` is the only one added
+  beyond the brief's list, and only because Photo Sphere Viewer requires it as
+  a peer.
+- An alignment, hotspot or coordinate that looks wrong is flagged, never
+  silently corrected.
 - No CSS framework — plain CSS with custom properties.
 - Vazirmatn is self-hosted as woff2; Google Fonts is not reliably reachable.

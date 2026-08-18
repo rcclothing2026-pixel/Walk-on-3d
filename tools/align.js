@@ -27,7 +27,7 @@ import '@photo-sphere-viewer/core/index.css';
 
 import { panoUrl, dataUrl } from '../src/lib/paths.js';
 import { loadTourData } from '../src/lib/tour-data.js';
-import { downloadJson, saveData, tourLink } from './save.js';
+import { downloadJson, saveData, wireHome } from './save.js';
 
 /** Filled once the tour's roster has loaded. */
 let NODES = [];
@@ -71,6 +71,7 @@ let viewer = null;
 start();
 
 async function start() {
+  wireHome();
   tourData = await loadTourData();
   NODES = tourData.numbers();
   current = initialNode();

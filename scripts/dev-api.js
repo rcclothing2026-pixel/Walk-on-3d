@@ -33,7 +33,7 @@ import { loadRoster } from './roster.js';
 import { findRaw, listRaw } from './raw.js';
 
 /** The files the API will write, by the key the tools use. */
-const WRITABLE = new Set(['alignment', 'nodes', 'brands', 'sources', 'names', 'tour']);
+const WRITABLE = new Set(['alignment', 'nodes', 'brands', 'sources', 'names', 'tour', 'links']);
 
 /** Cap on a posted body, so a runaway request cannot exhaust memory. */
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
@@ -79,6 +79,15 @@ export function devApi() {
           }
           if (req.method === 'POST' && route === '/remove-node') {
             return json(res, await removeNode(slug, await body(req)));
+          }
+          if (req.method === 'POST' && route === '/add-node-at') {
+            return json(res, await addNodeAt(slug, await body(req)));
+          }
+          if (req.method === 'POST' && route === '/rebuild') {
+            return json(res, await rebuild(slug));
+          }
+          if (req.method === 'POST' && route === '/floorplan') {
+            return json(res, await uploadFloorplan(slug, req, url.searchParams.get('name')));
           }
 
           return json(res, { error: 'not found' }, 404);
@@ -410,6 +419,103 @@ async function removeNode(slug, { node }) {
   return { node: id, removed: true };
 }
 
+/**
+ * Creates a node and places it on the plan in one step.
+ *
+ * Adding a node and then finding it in a list to position it are the same
+ * action from the operator's point of view — they clicked a spot on the plan
+ * because that is where the shooting point is.
+ */
+async function addNodeAt(slug, { x, y, name, type }) {
+  if (!Number.isFinite(Number(x)) || !Number.isFinite(Number(y))) {
+    throw new Error('x and y are required');
+  }
+
+  const created = await addNode(slug, { name, type });
+  const paths = await tourPaths(slug);
+  const nodes = (await readJson(paths.file('nodes'))) ?? { nodes: {} };
+
+  nodes.nodes ??= {};
+  nodes.nodes[created.node] = {
+    ...(nodes.nodes[created.node] ?? {}),
+    id: created.node,
+    map: { x: Math.round(Number(x)), y: Math.round(Number(y)) },
+    links: nodes.nodes[created.node]?.links ?? [],
+  };
+
+  await writeJsonAt(paths.file('nodes'), nodes);
+  return { ...created, map: nodes.nodes[created.node].map };
+}
+
+/**
+ * Regenerates nodes.json from the tour's roster and links.
+ *
+ * Called after the link graph is edited, so newly drawn connections turn into
+ * arrows without dropping to a terminal. Picked angles and map points survive,
+ * exactly as they do on the command line.
+ */
+async function rebuild(slug) {
+  const paths = await tourPaths(slug);
+
+  return new Promise((resolve) => {
+    execFile(
+      process.execPath,
+      [path.join(ROOT, 'scripts/build-nodes.js'), `--tour=${paths.slug}`],
+      { cwd: ROOT, timeout: 60 * 1000 },
+      (err, stdout, stderr) => {
+        resolve({ ok: !err, output: stripAnsi(`${stdout}${stderr}`).trim() });
+      },
+    );
+  });
+}
+
+/**
+ * Accepts a floor plan uploaded from the studio.
+ *
+ * A PDF goes through the same ink-detection crop the command line uses, so an
+ * architect's sheet can be dropped in as-is rather than cropped by hand first.
+ * Anything else is treated as an image and normalised to PNG.
+ */
+async function uploadFloorplan(slug, req, name = '') {
+  const paths = await tourPaths(slug);
+  const bytes = await rawBody(req, 64 * 1024 * 1024);
+
+  if (!bytes.length) throw new Error('no file received');
+
+  const isPdf = bytes.subarray(0, 5).toString('latin1') === '%PDF-' || /\.pdf$/i.test(name);
+
+  if (isPdf) {
+    const pdf = path.join(paths.dir, 'blueprint.pdf');
+    await writeFile(pdf, bytes);
+
+    const result = await new Promise((resolve) => {
+      execFile(
+        process.execPath,
+        [path.join(ROOT, 'scripts/floorplan.js'), `--tour=${paths.slug}`],
+        { cwd: ROOT, timeout: 5 * 60 * 1000 },
+        (err, stdout, stderr) => resolve({ err, out: stripAnsi(`${stdout}${stderr}`) }),
+      );
+    });
+
+    if (result.err) {
+      throw new Error(
+        `The PDF was saved but could not be converted.\n${result.out.trim()}\n\n` +
+          'Converting a PDF needs pdftoppm (poppler-utils). A PNG can be uploaded instead.',
+      );
+    }
+
+    return { from: 'pdf', output: result.out.trim() };
+  }
+
+  const { default: sharp } = await import('sharp');
+  const info = await sharp(bytes, { limitInputPixels: 512 * 1024 * 1024 })
+    .resize(2400, null, { withoutEnlargement: true })
+    .png({ compressionLevel: 9, palette: true, colours: 32 })
+    .toFile(paths.floorplan);
+
+  return { from: 'image', width: info.width, height: info.height, bytes: info.size };
+}
+
 /* ------------------------------------------------------------------ *
  * Writing
  * ------------------------------------------------------------------ */
@@ -424,6 +530,7 @@ async function save(slug, name, payload) {
   const target = paths.file(name);
 
   if (name === 'names') await writeNames(target, payload);
+  else if (name === 'links') await writeLinks(target, payload);
   else await writeJsonAt(target, payload);
 
   return { saved: path.relative(ROOT, target) };
@@ -431,6 +538,43 @@ async function save(slug, name, payload) {
 
 async function writeJsonAt(file, payload) {
   await writeFile(file, `${JSON.stringify(payload, null, 2)}\n`);
+}
+
+/**
+ * Writes links.json one edge per line.
+ *
+ * Plain JSON.stringify puts every number of every pair on its own line, so a
+ * fifty-edge venue becomes three hundred lines and the graph stops being
+ * readable in a diff. The node lists are folded the same way.
+ */
+async function writeLinks(file, payload) {
+  const edges = (payload.edges ?? [])
+    .map((edge) => [Number(edge[0]), Number(edge[1])].sort((a, b) => a - b))
+    .filter(([a, b]) => Number.isInteger(a) && Number.isInteger(b) && a !== b);
+
+  // De-duplicated: the same pair drawn twice would generate a doubled arrow.
+  const seen = new Set();
+  const unique = edges.filter(([a, b]) => {
+    const key = `${a}-${b}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  unique.sort((p, q) => p[0] - q[0] || p[1] - q[1]);
+
+  const parts = [];
+  if (payload._comment) parts.push(`  "_comment": ${JSON.stringify(payload._comment)}`);
+  for (const key of ['deadEnds', 'expectedSingleLink']) {
+    if (Array.isArray(payload[key])) parts.push(`  ${JSON.stringify(key)}: [${payload[key].join(', ')}]`);
+  }
+  parts.push(
+    unique.length
+      ? `  "edges": [\n${unique.map(([a, b]) => `    [${a}, ${b}]`).join(',\n')}\n  ]`
+      : '  "edges": []',
+  );
+
+  await writeFile(file, `{\n${parts.join(',\n')}\n}\n`);
 }
 
 /**
@@ -511,6 +655,27 @@ function body(req) {
       }
     });
 
+    req.on('error', reject);
+  });
+}
+
+/** Collects a binary upload, capped so a huge file cannot exhaust memory. */
+function rawBody(req, limit) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+
+    req.on('data', (chunk) => {
+      size += chunk.length;
+      if (size > limit) {
+        reject(new Error(`file too large (over ${Math.round(limit / 1024 / 1024)} MB)`));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+
+    req.on('end', () => resolve(Buffer.concat(chunks)));
     req.on('error', reject);
   });
 }

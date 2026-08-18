@@ -16,7 +16,7 @@
 
     <header class="bar bar--top">
       <div class="group">
-        <a class="btn" href="/tour/tools/studio.html" title="Back to the studio">☰</a>
+        <a id="home" class="btn" href="/tour/tools/studio.html" title="Back to the studio">☰</a>
         <button id="prev" class="btn" title="Previous node (Page Up)">‹</button>
         <select id="node" class="select" aria-label="Node"></select>
         <button id="next" class="btn" title="Next node (Page Down)">›</button>
@@ -29,9 +29,13 @@
       </div>
 
       <div class="group">
+        <div class="modes" role="group" aria-label="Mode">
+          <button id="mode-place" class="btn is-on" data-mode="place" title="Position existing nodes (1)">Place</button>
+          <button id="mode-add" class="btn" data-mode="add" title="Click the plan to create a node (2)">Add</button>
+          <button id="mode-link" class="btn" data-mode="link" title="Click two nodes to connect them (3)">Link</button>
+        </div>
         <span id="progress" class="progress"></span>
-        <button id="copy" class="btn btn--primary" title="Copy the map points">Copy points</button>
-        <button id="download" class="btn" title="Write src/data/nodes.json">Save all</button>
+        <button id="download" class="btn btn--primary" title="Write the tour's data">Save</button>
       </div>
     </header>
 
@@ -41,10 +45,7 @@
         <span id="placed-count" class="progress"></span>
       </div>
       <ol id="node-list" class="links"></ol>
-      <p class="panel__hint">
-        Click the plan to place the selected node. Placing advances to the next
-        unplaced node, so you can work straight down the list.
-      </p>
+      <p class="panel__hint" id="hint"></p>
     </aside>
 
     <footer class="bar bar--bottom">
@@ -52,14 +53,17 @@
       <input id="zoom" class="slider" type="range" min="40" max="400" step="5" value="100" />
       <span id="zoom-value" class="progress">100%</span>
       <button id="fit" class="btn" title="Fit the plan to the window">Fit</button>
+      <label class="slider-label"><input type="checkbox" id="show-links" checked /> links</label>
+      <button id="upload" class="btn" title="Replace the floor plan (PNG, JPG or PDF)">Floor plan…</button>
+      <input id="file" type="file" accept="image/*,.pdf" hidden />
       <button id="clear-node" class="btn" title="Unplace this node (Delete)">Clear node</button>
-      <button id="clear-all" class="btn">Clear all</button>
+      <button id="rebuild" class="btn" title="Turn the links into arrows">Rebuild</button>
     </footer>
 
     <div id="status" class="status" hidden></div>
 
     <div id="help" class="help">
-      <strong>Click</strong> place · <strong>Del</strong> unplace ·
+      <strong>1/2/3</strong> mode · <strong>Del</strong> unplace ·
       <strong>PgUp/PgDn</strong> node · drag to pan
     </div>
 

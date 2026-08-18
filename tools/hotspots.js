@@ -28,7 +28,7 @@ import '@photo-sphere-viewer/markers-plugin/index.css';
 
 import { panoUrl, dataUrl } from '../src/lib/paths.js';
 import { loadTourData } from '../src/lib/tour-data.js';
-import { downloadJson, saveData, tourLink } from './save.js';
+import { downloadJson, saveData, wireHome } from './save.js';
 
 let NODES = [];
 let tourData = null;
@@ -71,6 +71,7 @@ let placementEnabled = true;
 start();
 
 async function start() {
+  wireHome();
   tourData = await loadTourData();
   NODES = tourData.numbers();
 

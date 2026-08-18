@@ -69,3 +69,15 @@ export function downloadJson(filename, payload) {
 
   URL.revokeObjectURL(url);
 }
+
+/**
+ * Points a tool's "back to the studio" button at the tour being edited.
+ *
+ * The href in the markup is deliberately plain, so the button still works when
+ * a tool is opened on its own; this rewrites it so the selection survives the
+ * trip back to the studio.
+ */
+export function wireHome() {
+  const home = document.getElementById('home');
+  if (home) home.href = tourLink(home.getAttribute('href'));
+}
