@@ -410,7 +410,12 @@ function syncUrl(node) {
 
 function showFatal(err, message = 'بارگذاری تور ممکن نشد.') {
   console.error('[tour]', err);
-  showError(message, 'صفحه را دوباره بارگذاری کنید.');
+
+  // A visitor gets the plain Persian message; whoever is building the tour gets
+  // what actually went wrong, on screen, without opening a console. Stripped
+  // from the production build, so no visitor ever sees an English stack.
+  const detail = import.meta.env?.DEV ? err?.message || String(err ?? '') : '';
+  showError(message, detail || 'صفحه را دوباره بارگذاری کنید.');
 }
 
 /**

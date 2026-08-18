@@ -140,7 +140,16 @@ function onPaneMessage(event) {
  * never reports back, so this cannot loop.
  */
 function moveTourPane(frame) {
-  frame.setAttribute('src', tourLink('/tour/', { node }));
+  const src = tourLink('/tour/', { node });
+
+  // Never reload it onto the node it is already showing. Both panes open on
+  // the same node, so the other one's first announcement asks for exactly
+  // where the tour already is — and reloading there tears down a viewer
+  // mid-fetch. With small test panoramas that reload wins the race and nothing
+  // shows; with real ones it can abort the load outright.
+  if (frame.getAttribute('src') === src) return;
+
+  frame.setAttribute('src', src);
 }
 
 function render() {
