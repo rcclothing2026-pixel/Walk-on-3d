@@ -233,6 +233,20 @@ quietly would mirror every arrow in the tour. The tool stops and says so, and
 **Re-calibrate** throws the verdict away so it can be measured again from two
 doorways further apart.
 
+### Before you sight 42 nodes, check the files
+
+Some 360 cameras record which way they were pointing — a compass reading in the
+XMP as `GPano:PoseHeadingDegrees`. If a tour's photographs carry it, the
+sighting work collapses to one node.
+
+```bash
+npm run heading -- --tour=hammam
+```
+
+It reads and reports, and changes nothing. A full set of headings still needs
+one node sighted, to find the offset between magnetic north and the top of the
+drawing — but only one. A partial set is worth nothing on its own and says so.
+
 ### What it cannot do
 
 **Pitch.** How steeply an arrow tilts depends on distance and camera height, and

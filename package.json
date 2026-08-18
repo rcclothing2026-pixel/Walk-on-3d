@@ -3,10 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "360° virtual tour of a historic courtyard complex — static bundle for Laravel public/tour/",
+  "description": "360\u00b0 virtual tour of a historic courtyard complex \u2014 static bundle for Laravel public/tour/",
   "scripts": {
     "process": "node scripts/process.js",
     "floorplan": "node scripts/floorplan.js",
+    "heading": "node scripts/heading.js",
     "nodes": "node scripts/build-nodes.js",
     "dev": "vite",
     "build": "npm run nodes -- --check && vite build && node scripts/bundle.js",
