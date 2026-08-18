@@ -25,7 +25,12 @@ import '@photo-sphere-viewer/core/index.css';
 
 import { floorplanUrl, dataUrl, panoUrl } from '../src/lib/paths.js';
 import { loadTourData } from '../src/lib/tour-data.js';
-import { detectMirrored, planBearing, planNorthFromSighting } from '../src/lib/geometry.js';
+import {
+  detectMirrored,
+  planBearing,
+  planNorthFromSighting,
+  rawAngle,
+} from '../src/lib/geometry.js';
 import { downloadJson, saveData, withTour } from './save.js';
 import { mountNav } from './nav.js';
 import { announceNode, connectFrame } from './frame.js';
@@ -78,8 +83,22 @@ let viewer = null;
 /** node → { pan, planNorth } exactly as alignment.json holds it. */
 const alignment = new Map();
 
-/** Whether this tour's panoramas run the usual way round. Null until measured. */
-let mirrored = null;
+/**
+ * Whether this tour's panoramas run the usual way round.
+ *
+ * Defaults to the usual handedness rather than to "unknown". Nearly every 360
+ * camera writes frames that way, and holding every anchor hostage to a
+ * measurement — one that needs a node with two placed neighbours, which not
+ * every node has — stops the work for the rare case instead of the common one.
+ *
+ * Sighting two doorways at any node still measures it, and disagreeing with
+ * this is loud. Because the sighting itself is what gets stored, flipping the
+ * verdict later recomputes every anchor rather than invalidating them.
+ */
+let mirrored = false;
+
+/** Whether that default has actually been measured. */
+let handednessMeasured = false;
 
 /** Sightings taken at the node in view, not yet committed. */
 let sightings = [];
@@ -136,7 +155,8 @@ async function start() {
 
   tourData = await loadTourData();
   NODES = tourData.numbers();
-  mirrored = typeof tourData.config.mirrored === 'boolean' ? tourData.config.mirrored : null;
+  mirrored = tourData.config.mirrored === true;
+  handednessMeasured = typeof tourData.config.mirrored === 'boolean';
 
   tour = await loadNodes();
   if (!tour) return;
@@ -180,6 +200,7 @@ async function loadAlignment() {
       alignment.set(Number(id), {
         pan: Number.isFinite(value?.pan) && !value.todo ? value.pan : 0,
         planNorth: Number.isFinite(value?.planNorth) ? value.planNorth : null,
+        sight: Number.isFinite(value?.sight?.raw) ? value.sight : null,
       });
     }
   } catch {
@@ -348,9 +369,9 @@ function record() {
   if (needsCalibration() && sightings.length >= 2) settleHandedness();
 }
 
-/** A tour's handedness is unknown until two real sightings decide it. */
+/** Whether a second sighting here would tell us something we have not measured. */
 function needsCalibration() {
-  return mirrored === null;
+  return !handednessMeasured;
 }
 
 /**
@@ -373,6 +394,8 @@ function settleHandedness() {
     return;
   }
 
+  handednessMeasured = true;
+  const changed = verdict.mirrored !== mirrored;
   mirrored = verdict.mirrored;
   el.calibration.hidden = false;
   el.calibration.dataset.kind = verdict.mirrored || verdict.residual > MAX_RESIDUAL ? 'warn' : 'ok';
@@ -386,6 +409,10 @@ function settleHandedness() {
   // sighting on the wrong doorway than a genuinely mirrored camera. Said out
   // loud rather than applied quietly, because applying it quietly would mirror
   // every arrow in the tour.
+  // Every anchor already recorded was drawn from a stored sighting, so a change
+  // of handedness is re-derived rather than re-walked.
+  if (changed) reanchorFromSightings();
+
   if (verdict.mirrored) {
     showStatus(
       '<strong>This measured as mirrored.</strong><br /><br />' +
@@ -413,6 +440,45 @@ function settleHandedness() {
 }
 
 /**
+ * Recomputes every anchor from the sighting it came from.
+ *
+ * Run when the handedness changes, and when a node moves on the plan: both
+ * change what a sighting means without changing the sighting itself. Nodes
+ * anchored before sightings were recorded are left alone — there is nothing to
+ * recompute them from, and guessing would be worse than leaving them.
+ */
+function reanchorFromSightings() {
+  let redone = 0;
+
+  for (const [node, entry] of alignment) {
+    const sight = entry.sight;
+    if (!sight || !hasPoint(node)) continue;
+
+    const to = Number(sight.target);
+    if (!hasPoint(to)) continue;
+
+    const planNorth = round(
+      planNorthFromSighting({
+        observedYaw: sight.raw,
+        pan: 0,
+        bearing: planBearing(tour.nodes[pad(node)].map, tour.nodes[pad(to)].map),
+        mirrored,
+      }),
+    );
+
+    alignment.set(node, { ...entry, pan: planNorth, planNorth });
+    redone++;
+  }
+
+  if (redone) {
+    dirty = true;
+    toast(`Re-derived ${redone} anchor(s)`);
+  }
+
+  return redone;
+}
+
+/**
  * Commits the node's anchor and moves on.
  *
  * Only `planNorth` and `pan` are written. Arrow angles are the build's job, so
@@ -424,15 +490,6 @@ async function saveAndNext() {
     return;
   }
 
-  if (needsCalibration()) {
-    toast(
-      'Sight a second doorway to settle the handedness — or press Save to keep ' +
-        'the placements and links without anchoring',
-      'error',
-    );
-    return;
-  }
-
   const planNorth = planNorthFromSighting({ ...sightings[0], mirrored });
   const node = current;
   const before = alignment.get(node) ?? null;
@@ -440,7 +497,15 @@ async function saveAndNext() {
   // pan is set to the anchor so the sphere opens plan-aligned: yaw 0 looks at
   // the top of the drawing. That also puts the mini-map's facing cone the right
   // way round, which "any consistent direction" never guaranteed.
-  alignment.set(node, { pan: round(planNorth), planNorth: round(planNorth) });
+  // The sighting is kept, not just what it produced. It is the measurement; the
+  // anchor is a conclusion drawn from it and from the tour's handedness, and
+  // keeping the measurement means either of those can change without anyone
+  // having to stand in this node again.
+  alignment.set(node, {
+    pan: round(planNorth),
+    planNorth: round(planNorth),
+    sight: { raw: round(rawAngle(sightings[0].observedYaw, sightings[0].pan)), target: pad(sightings[0].target) },
+  });
 
   if (!(await persist())) {
     if (before) alignment.set(node, before);
@@ -479,7 +544,11 @@ async function persist({ quiet = false } = {}) {
   for (const n of NODES) {
     const entry = alignment.get(n);
     payload[pad(n)] = entry
-      ? { pan: entry.pan, ...(entry.planNorth === null ? {} : { planNorth: entry.planNorth }) }
+      ? {
+          pan: entry.pan,
+          ...(entry.planNorth === null ? {} : { planNorth: entry.planNorth }),
+          ...(entry.sight ? { sight: entry.sight } : {}),
+        }
       : { pan: 0, todo: true };
   }
 
@@ -509,7 +578,7 @@ async function persist({ quiet = false } = {}) {
 
   // The handedness belongs to the tour, not to a node, and it is only measured
   // once. Written on the first save so a later session does not re-ask.
-  if (tourData.config.mirrored !== mirrored) {
+  if (handednessMeasured && tourData.config.mirrored !== mirrored) {
     tourData.config.mirrored = mirrored;
     await saveData('tour', tourData.config);
   }
@@ -985,22 +1054,12 @@ function syncHint() {
     return;
   }
 
-  if (needsCalibration() && targets().length < 2) {
-    const elsewhere = NODES.find((n) => targets(n).length >= 2);
+  if (needsCalibration() && targets().length >= 2 && sightings.length < 2) {
     el.hint.innerHTML =
-      '<strong>Only one placed neighbour here.</strong> Calibration needs two, ' +
-      'because it works from the angle between them. ' +
-      (elsewhere === undefined
-        ? 'Place and link more nodes first.'
-        : `Start at <strong>${pad(elsewhere)}</strong> instead.`);
-    return;
-  }
-
-  if (needsCalibration()) {
-    el.hint.innerHTML =
-      `<strong>Calibrating (${sightings.length}/2).</strong> Sight two doorways at ` +
-      'this node — that is what tells the tour whether its panoramas run the ' +
-      'usual way round. Only needed once.';
+      `Turn until <strong>${pad(target())}</strong> is on the crosshair, then ` +
+      '<strong>Record sighting</strong>. ' +
+      `<span class="muted">Sighting a second doorway here (${sightings.length}/2) ` +
+      'would also confirm the handedness, which is worth doing once.</span>';
     return;
   }
 
@@ -1136,9 +1195,12 @@ function initialNode() {
   const requested = Number(new URLSearchParams(location.search).get('node'));
   if (NODES.includes(requested)) return requested;
 
+  // A node with two placed neighbours is a better place to begin, because
+  // sighting both also confirms the handedness. It is a preference, not a
+  // requirement — anchoring works from one sighting anywhere.
   if (needsCalibration()) {
-    const calibratable = NODES.find((n) => targets(n).length >= 2);
-    if (calibratable !== undefined) return calibratable;
+    const better = NODES.find((n) => targets(n).length >= 2 && !isAnchored(n));
+    if (better !== undefined) return better;
   }
 
   return (

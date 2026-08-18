@@ -28,7 +28,7 @@ import path from 'node:path';
 import process from 'node:process';
 
 import { adjacency, validate } from './graph.js';
-import { arrowYaw, planBearing } from '../src/lib/geometry.js';
+import { arrowYaw, planBearing, planNorthFromSighting } from '../src/lib/geometry.js';
 import { ROOT, listTours, readJson, resolveTour, tourPaths } from './tours.js';
 import { loadRoster } from './roster.js';
 
@@ -226,13 +226,12 @@ function checkOnDisk(nodes, roster, { start, links, slug }) {
  * which is why this needs no calibration of the drawing.
  */
 function deriveArrow(from, to, { alignment, previous, mirrored }) {
-  const here = alignment?.[pad(from)];
-  const planNorth = here?.planNorth;
-  if (!Number.isFinite(planNorth)) return null;
-
   const a = previous?.nodes?.[pad(from)]?.map;
   const b = previous?.nodes?.[pad(to)]?.map;
   if (!isPoint(a) || !isPoint(b)) return null;
+
+  const planNorth = anchorOf(from, { alignment, previous, mirrored });
+  if (!Number.isFinite(planNorth)) return null;
 
   // Two nodes on the same spot have no bearing between them. That is a bad map
   // point rather than a legitimate arrow, so it falls through to auto and shows
@@ -245,6 +244,34 @@ function deriveArrow(from, to, { alignment, previous, mirrored }) {
     bearing: planBearing(a, b),
     mirrored,
   });
+}
+
+/**
+ * A node's anchor against the plan.
+ *
+ * Recomputed from the sighting that produced it whenever one was recorded, so
+ * that moving a dot — or discovering the panoramas are mirrored — moves the
+ * arrows too, without anyone standing in the node again. The stored value is
+ * the fallback for anchors made before sightings were kept.
+ */
+function anchorOf(node, { alignment, previous, mirrored }) {
+  const entry = alignment?.[pad(node)];
+  if (!entry) return null;
+
+  const sight = entry.sight;
+  const here = previous?.nodes?.[pad(node)]?.map;
+  const there = sight ? previous?.nodes?.[pad(Number(sight.target))]?.map : null;
+
+  if (Number.isFinite(sight?.raw) && isPoint(here) && isPoint(there)) {
+    return planNorthFromSighting({
+      observedYaw: sight.raw,
+      pan: 0,
+      bearing: planBearing(here, there),
+      mirrored,
+    });
+  }
+
+  return Number.isFinite(entry.planNorth) ? entry.planNorth : null;
 }
 
 function isPoint(p) {
