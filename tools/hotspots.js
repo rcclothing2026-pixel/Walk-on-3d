@@ -195,7 +195,7 @@ function onPanoramaClick({ data }) {
 
   link.yaw = round(norm360(rad2deg(data.yaw)));
   link.pitch = round(rad2deg(data.pitch));
-  delete link.auto;
+  claim(link);
 
   renderLinks();
   syncMarkers();
@@ -242,7 +242,7 @@ function arrowHtml(link, target, { active, bad }) {
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="M12 2 L20 20 L12 15.5 L4 20 Z" />
       </svg>
-      <span>${link.node}${link.auto ? ' ?' : ''}</span>
+      <span>${link.node}${isPicked(link) ? '' : ' ?'}</span>
     </div>`;
 }
 
@@ -266,7 +266,8 @@ function renderLinks() {
             ${link.yaw}° / ${link.pitch}°
           </span>
           ${link.auto ? '<span class="tag">auto</span>' : ''}
-          ${bad && !link.auto ? '<span class="tag tag--warn">pitch</span>' : ''}
+          ${link.derived ? '<span class="tag">plan</span>' : ''}
+          ${bad && isPicked(link) ? '<span class="tag tag--warn">pitch</span>' : ''}
         </li>`;
     })
     .join('');
@@ -280,7 +281,7 @@ function renderLinks() {
     });
   }
 
-  const picked = links.filter((l) => !l.auto).length;
+  const picked = links.filter(isPicked).length;
   el.linkCount.textContent = `${picked}/${links.length}`;
   syncProgress();
   syncPositionInputs();
@@ -288,7 +289,7 @@ function renderLinks() {
 
 function syncProgress() {
   const all = Object.values(tour.nodes).flatMap((n) => n.links);
-  const picked = all.filter((l) => !l.auto).length;
+  const picked = all.filter(isPicked).length;
   el.progress.textContent = `${picked}/${all.length} arrows placed`;
   el.progress.dataset.complete = String(picked === all.length);
 }
@@ -367,7 +368,7 @@ function wireKeyboard() {
 
 function wireUnloadGuard() {
   window.addEventListener('beforeunload', (event) => {
-    const picked = Object.values(tour.nodes).flatMap((n) => n.links).filter((l) => !l.auto);
+    const picked = Object.values(tour.nodes).flatMap((n) => n.links).filter(isPicked);
     if (!picked.length) return;
     event.preventDefault();
     event.returnValue = '';
@@ -379,10 +380,34 @@ function setAngle(which, value) {
   if (!link || !Number.isFinite(value)) return;
 
   link[which] = which === 'yaw' ? round(norm360(value)) : round(value);
-  delete link.auto;
+  claim(link);
 
   renderLinks();
   syncMarkers();
+}
+
+/**
+ * Whether a human has actually aimed this arrow.
+ *
+ * An arrow spread evenly round the horizon and one worked out from the floor
+ * plan are both guesses — good and bad ones — and neither has been looked at.
+ * Counting the second as placed would report a finished tour that nobody has
+ * checked.
+ */
+function isPicked(link) {
+  return !link.auto && !link.derived;
+}
+
+/**
+ * Marks an arrow as aimed by hand.
+ *
+ * Clearing `derived` is the important half: the build recomputes anything still
+ * carrying that flag from the floor plan, so without this the next rebuild
+ * would quietly undo the correction that was just made.
+ */
+function claim(link) {
+  delete link.auto;
+  delete link.derived;
 }
 
 function advance(delta = 1) {
@@ -407,6 +432,7 @@ function resetActiveLink() {
   link.yaw = round((360 / links.length) * activeIndex);
   link.pitch = tour.autoPitch ?? -20;
   link.auto = true;
+  delete link.derived;
 
   renderLinks();
   syncMarkers();
@@ -418,6 +444,7 @@ function resetNode() {
     link.yaw = round((360 / links.length) * index);
     link.pitch = tour.autoPitch ?? -20;
     link.auto = true;
+    delete link.derived;
   });
   renderLinks();
   syncMarkers();
