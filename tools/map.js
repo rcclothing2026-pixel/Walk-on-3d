@@ -19,6 +19,7 @@ import { floorplanUrl, dataUrl } from '../src/lib/paths.js';
 import { loadTourData } from '../src/lib/tour-data.js';
 import { downloadJson, saveData, withTour } from './save.js';
 import { mountNav } from './nav.js';
+import { announceNode, connectFrame } from './frame.js';
 
 let NODES = [];
 let tourData = null;
@@ -97,6 +98,9 @@ async function start() {
   await loadPlan();
 
   redraw();
+
+  // Last: a pane must know its roster before the split view can move it.
+  connectFrame({ current: () => current, goto: selectNode });
 }
 
 /**
@@ -383,6 +387,9 @@ function renderList() {
 
 function syncChrome() {
   const empty = !NODES.length;
+
+  // Keeps the other pane of the split view on the same node. Inert otherwise.
+  if (!empty) announceNode(current);
   const { name, type } = empty ? { name: '', type: '' } : tourData.info(current);
   const point = tour.nodes[pad(current)]?.map;
   const placed = NODES.filter(isPlaced).length;
@@ -549,6 +556,13 @@ function wireUnloadGuard() {
     event.preventDefault();
     event.returnValue = '';
   });
+}
+
+/** Selects a node without moving it — what the other pane asks for. */
+function selectNode(node) {
+  if (!NODES.includes(node)) return;
+  current = node;
+  redraw();
 }
 
 function step(delta) {

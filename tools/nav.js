@@ -96,6 +96,14 @@ function render(drawer, { tool, node }) {
   ).join('');
 
   drawer.view.href = tourLink('/tour/', params);
+
+  // Opens beside the tool you are in, against the one you are most likely to
+  // want next: the plan, unless you are already on it.
+  drawer.split.href = tourLink('/tour/tools/split.html', {
+    ...params,
+    left: tool,
+    right: tool === 'map' ? 'align' : 'map',
+  });
   drawer.studio.href = tourLink('/tour/tools/studio.html');
   drawer.build.disabled = !Number.isFinite(node);
   drawer.message.hidden = true;
@@ -167,6 +175,7 @@ function build() {
       <nav class="drawer__links"></nav>
 
       <div class="drawer__group">
+        <a class="btn drawer__wide" target="_top" data-role="split">Split view — two at once</a>
         <a class="btn drawer__wide" target="_blank" rel="noopener"
            data-role="view">Open the tour here ↗</a>
         <button class="btn drawer__wide" data-role="build">Rebuild this photo</button>
@@ -190,6 +199,7 @@ function build() {
     node: pick('.drawer__node'),
     links: pick('.drawer__links'),
     view: pick('[data-role="view"]'),
+    split: pick('[data-role="split"]'),
     build: pick('[data-role="build"]'),
     rebuild: pick('[data-role="rebuild"]'),
     studio: pick('[data-role="studio"]'),

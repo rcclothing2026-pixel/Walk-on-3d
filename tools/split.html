@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Split view — Walk on 3D</title>
+    <link rel="stylesheet" href="./tools.css" />
+  </head>
+  <body class="split-body">
+    <header class="bar bar--top">
+      <div class="group">
+        <a id="studio" class="btn" href="/tour/tools/studio.html" title="All nodes">☰</a>
+        <select id="tour" class="select" aria-label="Venue"></select>
+      </div>
+
+      <div class="group group--name">
+        <select id="left-tool" class="select" aria-label="Left pane"></select>
+        <button id="swap" class="btn" title="Swap the panes">⇄</button>
+        <select id="right-tool" class="select" aria-label="Right pane"></select>
+      </div>
+
+      <div class="group">
+        <label class="slider-label">
+          <input type="checkbox" id="sync" checked /> same node
+        </label>
+        <span id="node-label" class="progress"></span>
+      </div>
+    </header>
+
+    <div id="panes" class="panes">
+      <iframe id="left" class="pane" title="Left tool"></iframe>
+      <div id="divider" class="divider" role="separator" aria-label="Resize panes"></div>
+      <iframe id="right" class="pane" title="Right tool"></iframe>
+    </div>
+
+    <script type="module" src="./split.js"></script>
+  </body>
+</html>

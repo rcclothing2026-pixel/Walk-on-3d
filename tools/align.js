@@ -29,6 +29,7 @@ import { panoUrl, dataUrl } from '../src/lib/paths.js';
 import { loadTourData } from '../src/lib/tour-data.js';
 import { downloadJson, saveData } from './save.js';
 import { mountNav } from './nav.js';
+import { announceNode, connectFrame } from './frame.js';
 
 /** Filled once the tour's roster has loaded. */
 let NODES = [];
@@ -84,6 +85,9 @@ async function start() {
   wireKeyboard();
   wireUnloadGuard();
   await openNode(current);
+
+  // Last: a pane must know its roster before the split view can move it.
+  connectFrame({ current: () => current, goto: openNode });
 }
 
 /* ------------------------------------------------------------------ *
@@ -243,6 +247,9 @@ function buildNodeOptions() {
 
 function syncNodeChrome() {
   const { name, type, unconfirmed } = tourData.info(current);
+
+  // Keeps the other pane of the split view on the same node. Inert otherwise.
+  announceNode(current);
 
   el.node.value = String(current);
   el.name.textContent = name;

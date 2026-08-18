@@ -1126,3 +1126,43 @@ body {
 .drawer__foot {
   margin-top: auto;
 }
+
+/* ---------- split view ---------- */
+
+.split-body {
+  overflow: hidden;
+}
+
+.panes {
+  --split: 50%;
+  position: absolute;
+  inset: var(--bar-h) 0 0;
+  display: grid;
+  grid-template-columns: var(--split) 6px 1fr;
+}
+
+.pane {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: var(--bg);
+}
+
+.divider {
+  background: var(--line);
+  cursor: col-resize;
+}
+
+.divider:hover {
+  background: var(--accent);
+}
+
+/* A frame swallows the pointer, so the drag would end the moment it crossed
+   into one. Switched off for the duration. */
+.panes.is-dragging .pane {
+  pointer-events: none;
+}
+
+.panes.is-dragging .divider {
+  background: var(--accent);
+}

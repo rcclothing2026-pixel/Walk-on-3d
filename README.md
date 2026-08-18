@@ -54,12 +54,61 @@ API call carries `?tour=<slug>`:
 | the tour | `/tour/?tour=hammam` |
 | the tools | `/tour/tools/{align,hotspots,map}.html?tour=hammam` |
 
+## What a node is
+
+A **node** is one place a visitor can stand. One tripod position, one 360°
+photograph, one point on the floor plan. Nothing more — it is not a room, not a
+brand, not a stop on a tour. If the camera was set up in the middle of a large
+courtyard and again by its far door, that is two nodes, even though it is one
+room.
+
+Four separate things are true of a node, and they are recorded in four
+different places because they are answered by four different people at four
+different times:
+
+| | what it answers | where it lives | who sets it |
+|---|---|---|---|
+| **name** | what a visitor sees written on screen | `names.json` | whoever knows the venue |
+| **photo** | which file this position was shot as | `sources.json` | whoever looks at the pictures |
+| **north** | which way the camera was facing | `alignment.json` | the align tool |
+| **position** | where on the plan it stands | `nodes.json` | the map tool |
+
+A **link** is the fifth thing, and it belongs to a *pair* of nodes rather than
+to either one: it says you can walk from here to there. Links are what turn a
+pile of photographs into a tour, and they are drawn on the floor plan because
+that is the only place where "you can walk from here to there" is visible.
+
+Arrows are not a fifth thing to decide. An arrow is a link, drawn on the floor
+of a panorama, and the only choice left is *where in the picture* the doorway
+actually is.
+
+### The order, and why it is that order
+
+1. **Floor plan first.** Everything else is measured against it. Replacing it
+   later invalidates every position already placed.
+2. **Nodes and links next**, on the plan, before touching a single photograph.
+   This is the only step that needs someone who was in the building. It is also
+   fast: a click per shooting point, two clicks per doorway.
+3. **Photographs after that.** Now there are nodes to assign them to, and the
+   plan tells you which photograph is which — node 12 is the one by the far
+   door, so the picture showing the far door is node 12.
+4. **North, then arrows.** Alignment must be finished before arrows, because an
+   arrow is placed at an angle in a panorama that alignment rotates. Aim first
+   and align second and every arrow moves.
+5. **Walk it.** Open the tour and try to get lost. What you find will be
+   missing links, not missing photographs.
+
+The studio's four cards are in that order for the same reason, and each one
+tells you how far along it is.
+
 ## A new venue, start to finish
 
 Nothing below needs a terminal after `npm run dev`.
 
 1. **Create the tour.** In the studio, **+ Tour** — a slug and a title. That
-   writes `tours/<slug>/` with an empty roster.
+   writes `tours/<slug>/` with an empty roster. Then set its `rawDir` in
+   `tours/<slug>/tour.json` to wherever the photographs are — a path, or a
+   symlink in the project root pointing at them.
 2. **Upload the floor plan.** Open `tools/map.html`, press **Floor plan…** and
    pick a PNG, a JPG, or the architect's PDF. A PDF is rendered and cropped to
    the drawing automatically.
@@ -71,7 +120,9 @@ Nothing below needs a terminal after `npm run dev`.
 5. **Assign the photographs.** Back in the studio, drag each thumbnail onto its
    node, rename the nodes, then **process** to build the renditions.
 6. **Align and aim.** `tools/align.html` sets each panorama's north;
-   `tools/hotspots.html` puts each arrow where the doorway actually is.
+   `tools/hotspots.html` puts each arrow where the doorway actually is. Align
+   every node before aiming any arrow — arrows are angles inside a panorama
+   that alignment rotates.
 7. **Build.** `npm run build` emits `dist/<slug>/` — that directory *is* the
    deliverable.
 
@@ -108,10 +159,30 @@ Building a tour means visiting the same node in three tools: set its north, aim
 its arrows, put it on the plan. Going back to the studio between each was the
 whole trip — forty rows, find the row again, click the next button along.
 
-Switching tool is still a page load. Each tool owns a viewer, a floor plan or a
-panorama decode, and merging them into one page would mean holding all of that
-at once to save a reload that takes a moment. What was slow was the navigation,
-not the load.
+Switching tool is a page load, so when two of them belong side by side there is
+the split view.
+
+## Split view
+
+**Split view** — from the studio, or from any tool's drawer — puts two tools in
+one page, on the same node. Pick which tool is in each pane, drag the bar
+between them, untick **same node** to look at two different ones.
+
+Aligning a node and placing it on the plan are the same decision seen from two
+directions: which way the camera was facing, and where it was standing. Doing
+them in separate tabs means carrying the answer across a page load, which is
+where it gets lost.
+
+Each pane is the real tool in a frame, not a second implementation. They keep
+their own viewer, their own floor plan and their own save path; the only thing
+that crosses between them is which node is being worked on. That is also why
+the split is two panes rather than four: the cost is a panorama decode per
+pane, and it is real.
+
+The tour itself can go in a pane too. It does not take part in any of this —
+teaching it to would mean shipping split-view code in the customer's bundle —
+so it is simply reloaded at the new node, which is the only thing it
+understands.
 
 ## The studio
 
