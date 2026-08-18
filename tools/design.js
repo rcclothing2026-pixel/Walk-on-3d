@@ -227,13 +227,18 @@ function showMissingPanorama(node) {
  * Sighting
  * ------------------------------------------------------------------ */
 
-/** Neighbours of the current node that are on the plan, so have a bearing. */
-function targets() {
-  if (!hasPoint(current)) return [];
+/** Neighbours of a node that are on the plan, so have a bearing to them. */
+function targets(node = current) {
+  if (!hasPoint(node)) return [];
 
-  return (tour.nodes[pad(current)]?.links ?? [])
+  return (tour.nodes[pad(node)]?.links ?? [])
     .map((link) => Number(link.node))
     .filter((n) => NODES.includes(n) && hasPoint(n));
+}
+
+/** A node that can be worked on at all: it is placed and has somewhere to sight. */
+function workable(node) {
+  return targets(node).length > 0;
 }
 
 function target() {
@@ -333,9 +338,11 @@ async function saveAndNext() {
 
   if (!(await persist())) return;
 
-  const next = NODES.find((n) => n > current && !isAnchored(n)) ?? NODES.find((n) => !isAnchored(n));
+  const next =
+    NODES.find((n) => n > current && workable(n) && !isAnchored(n)) ??
+    NODES.find((n) => workable(n) && !isAnchored(n));
   if (next === undefined) {
-    toast('Every node is anchored — press Rebuild in the ☰ menu');
+    toast('Nothing left to anchor — press Rebuild in the ☰ menu');
     syncChrome();
     return;
   }
@@ -485,9 +492,23 @@ function syncHint() {
   }
 
   if (!targets().length) {
+    const links = (tour.nodes[pad(current)]?.links ?? []).length;
     el.hint.innerHTML =
-      '<strong>No placed neighbour.</strong> Draw a link from here to somewhere ' +
-      'that is on the plan, then rebuild.';
+      `<strong>Nothing to sight from here.</strong> This node ${
+        links ? 'links only to nodes that are not on the plan yet' : 'has no links at all'
+      }. Draw one to a placed node in the map tool (&#9776; &rarr; Map, press 3), ` +
+      'then <strong>Rebuild</strong>.';
+    return;
+  }
+
+  if (needsCalibration() && targets().length < 2) {
+    const elsewhere = NODES.find((n) => targets(n).length >= 2);
+    el.hint.innerHTML =
+      '<strong>Only one placed neighbour here.</strong> Calibration needs two, ' +
+      'because it works from the angle between them. ' +
+      (elsewhere === undefined
+        ? 'Place and link more nodes first.'
+        : `Start at <strong>${pad(elsewhere)}</strong> instead.`);
     return;
   }
 
@@ -577,10 +598,29 @@ function isAnchored(node) {
   return Number.isFinite(alignment.get(node)?.planNorth);
 }
 
+/**
+ * Where to start.
+ *
+ * Not simply the first unanchored node: calibration needs two placed
+ * neighbours to sight, and landing on a node that has one — or none — reads as
+ * the tool being broken rather than as that node not being ready. So when the
+ * handedness is still unknown, it opens somewhere that can settle it.
+ */
 function initialNode() {
   const requested = Number(new URLSearchParams(location.search).get('node'));
   if (NODES.includes(requested)) return requested;
-  return NODES.find((n) => hasPoint(n) && !isAnchored(n)) ?? NODES[0] ?? 1;
+
+  if (needsCalibration()) {
+    const calibratable = NODES.find((n) => targets(n).length >= 2);
+    if (calibratable !== undefined) return calibratable;
+  }
+
+  return (
+    NODES.find((n) => workable(n) && !isAnchored(n)) ??
+    NODES.find((n) => workable(n)) ??
+    NODES[0] ??
+    1
+  );
 }
 
 function degrees(radians) {
