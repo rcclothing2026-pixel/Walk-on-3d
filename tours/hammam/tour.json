@@ -10,5 +10,6 @@
   "//mapFromNode": "The mini-map stays hidden below this node. The entrance staircase sits at the very edge of the plan, where a dot reads as noise rather than orientation. Set to 1 to always show it.",
   "mapFromNode": 4,
   "//blueprint": "Optional. The architect's PDF, if the floor plan was generated from one. `npm run floorplan` reads it.",
-  "blueprint": "blueprint.pdf"
+  "blueprint": "blueprint.pdf",
+  "mirrored": true
 }

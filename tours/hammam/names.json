@@ -2,7 +2,6 @@
   "_comment": "Display names and node types. One line per node so correcting a name is a one-line change. Set \"unconfirmed\": true on any name that still needs verifying on site — the tools surface those visually.",
   "nodes": {
     "01": { "name": "سر پله", "type": "start" },
-    "02": { "name": "میان پله", "type": "stair" },
     "03": { "name": "پای پله", "type": "stair" },
     "04": { "name": "راهرو ورودی", "type": "corridor" },
     "05": { "name": "دروازه قصه", "type": "room" },

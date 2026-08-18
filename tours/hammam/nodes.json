@@ -747,7 +747,11 @@
           "pitch": -20,
           "auto": true
         }
-      ]
+      ],
+      "map": {
+        "x": 1364,
+        "y": 1223
+      }
     },
     "01": {
       "id": "01",
@@ -758,30 +762,13 @@
         {
           "node": "02",
           "yaw": 0,
-          "pitch": -20,
-          "auto": true
+          "pitch": -10.5
         }
-      ]
-    },
-    "02": {
-      "id": "02",
-      "name": "میان پله",
-      "type": "stair",
-      "pan": 0,
-      "links": [
-        {
-          "node": "01",
-          "yaw": 0,
-          "pitch": -20,
-          "auto": true
-        },
-        {
-          "node": "03",
-          "yaw": 180,
-          "pitch": -20,
-          "auto": true
-        }
-      ]
+      ],
+      "map": {
+        "x": 1623,
+        "y": 1607
+      }
     },
     "03": {
       "id": "03",
@@ -791,17 +778,19 @@
       "links": [
         {
           "node": "02",
-          "yaw": 0,
-          "pitch": -20,
-          "auto": true
+          "yaw": 268.6,
+          "pitch": -21.5
         },
         {
           "node": "04",
-          "yaw": 180,
-          "pitch": -20,
-          "auto": true
+          "yaw": 2.6,
+          "pitch": -37.6
         }
-      ]
+      ],
+      "map": {
+        "x": 1660,
+        "y": 1467
+      }
     },
     "04": {
       "id": "04",
@@ -811,29 +800,29 @@
       "links": [
         {
           "node": "03",
-          "yaw": 0,
-          "pitch": -20,
-          "auto": true
+          "yaw": 134.4,
+          "pitch": 27.1
         },
         {
           "node": "05",
-          "yaw": 90,
-          "pitch": -20,
-          "auto": true
+          "yaw": 342.5,
+          "pitch": -29
         },
         {
           "node": "06",
-          "yaw": 180,
-          "pitch": -20,
-          "auto": true
+          "yaw": 296,
+          "pitch": -40.2
         },
         {
           "node": "37",
-          "yaw": 270,
-          "pitch": -20,
-          "auto": true
+          "yaw": 353.7,
+          "pitch": -4.7
         }
-      ]
+      ],
+      "map": {
+        "x": 1427,
+        "y": 1465
+      }
     },
     "05": {
       "id": "05",
@@ -843,17 +832,19 @@
       "links": [
         {
           "node": "04",
-          "yaw": 0,
-          "pitch": -20,
-          "auto": true
+          "yaw": 327.9,
+          "pitch": -21.2
         },
         {
           "node": "06",
-          "yaw": 180,
-          "pitch": -20,
-          "auto": true
+          "yaw": 322.8,
+          "pitch": 0.9
         }
-      ]
+      ],
+      "map": {
+        "x": 1278,
+        "y": 1320
+      }
     },
     "06": {
       "id": "06",
@@ -863,35 +854,34 @@
       "links": [
         {
           "node": "04",
-          "yaw": 0,
-          "pitch": -20,
-          "auto": true
+          "yaw": 19.3,
+          "pitch": -14
         },
         {
           "node": "05",
-          "yaw": 72,
-          "pitch": -20,
-          "auto": true
+          "yaw": 347.1,
+          "pitch": -7
         },
         {
           "node": "07",
-          "yaw": 144,
-          "pitch": -20,
-          "auto": true
+          "yaw": 124.8,
+          "pitch": -17
         },
         {
           "node": "08",
-          "yaw": 216,
-          "pitch": -20,
-          "auto": true
+          "yaw": 156.3,
+          "pitch": -4.4
         },
         {
           "node": "09",
-          "yaw": 288,
-          "pitch": -20,
-          "auto": true
+          "yaw": 167.9,
+          "pitch": -3.6
         }
-      ]
+      ],
+      "map": {
+        "x": 1148,
+        "y": 1221
+      }
     },
     "07": {
       "id": "07",
@@ -901,9 +891,8 @@
       "links": [
         {
           "node": "06",
-          "yaw": 0,
-          "pitch": -20,
-          "auto": true
+          "yaw": 60.1,
+          "pitch": -35.3
         }
       ]
     },
@@ -916,15 +905,13 @@
       "links": [
         {
           "node": "06",
-          "yaw": 0,
-          "pitch": -20,
-          "auto": true
+          "yaw": 33,
+          "pitch": -31.3
         },
         {
           "node": "09",
-          "yaw": 180,
-          "pitch": -20,
-          "auto": true
+          "yaw": 84.6,
+          "pitch": -10.9
         }
       ]
     },
@@ -942,9 +929,8 @@
         },
         {
           "node": "08",
-          "yaw": 60,
-          "pitch": -20,
-          "auto": true
+          "yaw": 228.3,
+          "pitch": -6.3
         },
         {
           "node": "10",
@@ -954,15 +940,13 @@
         },
         {
           "node": "11",
-          "yaw": 180,
-          "pitch": -20,
-          "auto": true
+          "yaw": 53,
+          "pitch": -5.4
         },
         {
           "node": "12",
-          "yaw": 240,
-          "pitch": -20,
-          "auto": true
+          "yaw": 145.9,
+          "pitch": -27.8
         },
         {
           "node": "14",
