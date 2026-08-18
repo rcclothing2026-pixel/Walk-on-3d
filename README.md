@@ -612,6 +612,52 @@ The cache policy is deliberately split: panoramas and hashed assets immutable
 for a year, `index.html` always revalidated (it is what points at the current
 asset hashes), tour JSON on a short TTL because the tools edit it.
 
+## Publishing to StoqS
+
+`npm run build` produces a bundle you can hand to anybody. This is the other
+route: pushing a venue straight into a StoqS installation, which serves it to
+visitors and decides who may see it.
+
+The two machines stay separate on purpose. The builder needs Node, sharp and
+several hundred megabytes of photographs; StoqS is a PHP host that needs none of
+that. Nothing about the tour is *made* on the server — it only receives.
+
+```bash
+export WALK_PUBLISH_TO=https://your-stoqs-site
+export WALK_PUBLISH_KEY_HAMMAM=…            # Super Admin → تورهای مجازی → 🔑
+npm run publish -- --tour=hammam
+```
+
+The key is minted per venue in StoqS and pasted here; the admin page prints
+these three lines ready to copy. It authenticates the machine, not a person, so
+it lives in the environment rather than in a shell history, and the command
+refuses to send it over plain `http://`. Regenerating it in StoqS locks out
+every machine that had the old one.
+
+What happens, in order:
+
+1. **Ask what is already there.** The site replies with a hash of every file it
+   holds. This also proves the key before anything large moves — a wrong key
+   fails in a second, not after ninety megabytes.
+2. **Send the documents.** `tour.json`, `names.json`, `links.json`,
+   `nodes.json`, `alignment.json`, `brands.json`, `sources.json`, into the
+   database. `nodes.json` must have been built (`npm run nodes`) — the arrows
+   are in it.
+3. **Send the floor plan and the panoramas** that differ from what the site
+   holds, three at a time, each retried on its own. `--force` sends everything.
+4. **Ask the site to go live.** It re-checks the roster, that every node has a
+   `-mid.jpg`, and that a floor plan exists, and refuses with a list rather than
+   publishing something broken.
+
+Re-running is how a correction gets out: every route overwrites rather than
+appends, so an interrupted upload is repaired by running the command again, and
+changing one panorama sends one file.
+
+`--dry-run` prints what would be sent and stops.
+
+The venue then lives at `https://your-stoqs-site/tour/<slug>/` — public once
+published, and visible only to whoever holds a grant before that.
+
 ## Image paths
 
 `src/config.js` decides where everything is fetched from, and it resolves
