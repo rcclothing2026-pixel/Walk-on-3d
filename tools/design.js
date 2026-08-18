@@ -66,6 +66,7 @@ const el = {
   libraryClose: document.getElementById('library-close'),
   modes: [...document.querySelectorAll('[data-mode]')],
   recalibrate: document.getElementById('recalibrate'),
+  saveAll: document.getElementById('save-all'),
 };
 
 let tourData = null;
@@ -107,6 +108,15 @@ const history = [];
 
 /** Whether a map point has moved since the last save. */
 let mapDirty = false;
+
+/**
+ * Whether anything at all is unwritten.
+ *
+ * Placing forty nodes and drawing a hundred links is an afternoon's work that
+ * lives in this page until it is saved, so it gets its own button and its own
+ * warning rather than riding along with anchoring a node.
+ */
+let dirty = false;
 
 /**
  * Whether a panorama swap is still in flight.
@@ -415,7 +425,11 @@ async function saveAndNext() {
   }
 
   if (needsCalibration()) {
-    toast('Sight a second doorway — that is what settles the handedness', 'error');
+    toast(
+      'Sight a second doorway to settle the handedness — or press Save to keep ' +
+        'the placements and links without anchoring',
+      'error',
+    );
     return;
   }
 
@@ -500,8 +514,27 @@ async function persist({ quiet = false } = {}) {
     await saveData('tour', tourData.config);
   }
 
+  dirty = false;
+  syncChrome();
+
   if (!quiet) toast(`Anchored ${pad(current)}`);
   return true;
+}
+
+/**
+ * Writes everything without anchoring anything.
+ *
+ * Placing and linking are most of the work here and neither of them needs a
+ * sighting, so they must not be held hostage to one — least of all during
+ * calibration, which refuses to save until two doorways have been sighted.
+ */
+async function saveEverything() {
+  el.saveAll.disabled = true;
+
+  const ok = await persist({ quiet: true });
+  el.saveAll.disabled = false;
+
+  if (ok) toast(`Saved — ${NODES.filter(hasPoint).length} placed, ${links.edges.length} links`);
 }
 
 /* ------------------------------------------------------------------ *
@@ -528,6 +561,7 @@ function toggleLink(other) {
       const undoAt = links.edges.findIndex(([x, y]) => x === a && y === b);
       if (undoAt !== -1) links.edges.splice(undoAt, 1);
     });
+    dirty = true;
     toast(`Linked ${pad(a)} ↔ ${pad(b)}`);
   } else {
     const [removed] = links.edges.splice(at, 1);
@@ -535,6 +569,7 @@ function toggleLink(other) {
       links.edges.push(removed);
       links.edges.sort((p, q) => p[0] - q[0] || p[1] - q[1]);
     });
+    dirty = true;
     toast(`Unlinked ${pad(a)} ↔ ${pad(b)}`);
   }
 
@@ -586,6 +621,7 @@ function placeHere(point) {
   tour.nodes[id] ??= { id, links: [] };
   tour.nodes[id].map = { x: Math.round(point.x), y: Math.round(point.y) };
   mapDirty = true;
+  dirty = true;
 
   remember(`place ${id}`, () => {
     if (before) tour.nodes[id].map = before;
@@ -899,6 +935,8 @@ function syncChrome() {
 
   el.prev.disabled = NODES.indexOf(current) === 0;
   el.next.disabled = NODES.indexOf(current) === NODES.length - 1;
+  el.saveAll.classList.toggle('btn--primary', dirty);
+  el.saveAll.textContent = dirty ? 'Save •' : 'Save';
   el.recalibrate.hidden = mirrored === null;
   el.progress.textContent = `${anchored}/${NODES.length} anchored`;
   el.progress.dataset.complete = String(anchored === NODES.length);
@@ -1005,6 +1043,7 @@ function wire() {
   el.save.addEventListener('click', saveAndNext);
   el.skip.addEventListener('click', () => step(1));
   el.undo.addEventListener('click', undoLast);
+  el.saveAll.addEventListener('click', saveEverything);
   el.plan.addEventListener('click', onPlanClick);
   el.photo.addEventListener('click', openLibrary);
   el.libraryClose.addEventListener('click', () => { el.library.hidden = true; });
@@ -1025,10 +1064,22 @@ function wire() {
 
   window.addEventListener('resize', fitPlan);
 
+  window.addEventListener('beforeunload', (event) => {
+    if (!dirty) return;
+    event.preventDefault();
+    event.returnValue = '';
+  });
+
   window.addEventListener('keydown', (event) => {
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
       event.preventDefault();
       undoLast();
+      return;
+    }
+
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
+      event.preventDefault();
+      saveEverything();
       return;
     }
 
