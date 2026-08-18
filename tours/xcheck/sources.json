@@ -1,4 +1,0 @@
-{
-  "_comment": "Which source photo feeds which node, set by dragging a photo onto a row in the studio. A node with no entry falls back to matching the number in the filename (7.jpg -> node 7). Filenames are relative to the raw directory.",
-  "sources": {}
-}

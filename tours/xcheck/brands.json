@@ -1,4 +1,0 @@
-{
-  "_comment": "Brand markers, keyed by node number (zero-padded). Optional — the marker layer degrades to nothing if this is empty. Each entry: { name, logo, description, url, position: { yaw, pitch } }. `logo` is resolved through IMAGE_BASE_URL, so 'brands/acme.svg' becomes /tour/brands/acme.svg.",
-  "brands": {}
-}
