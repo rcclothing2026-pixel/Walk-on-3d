@@ -28,6 +28,7 @@ import path from 'node:path';
 import process from 'node:process';
 
 import { adjacency, validate } from './graph.js';
+import { arrowYaw, planBearing } from '../src/lib/geometry.js';
 import { ROOT, listTours, readJson, resolveTour, tourPaths } from './tours.js';
 import { loadRoster } from './roster.js';
 
@@ -75,6 +76,8 @@ async function run(tour, opts) {
   const nodes = {};
   let picked = 0;
   let auto = 0;
+  let derived = 0;
+  const mirrored = Boolean(tour.config.mirrored);
 
   for (const n of roster) {
     const id = pad(n);
@@ -85,9 +88,26 @@ async function run(tour, opts) {
     const links = neighbours.map((other, index) => {
       const existing = previousLinks.get(pad(other));
 
-      if (existing && !existing.auto) {
+      // Hand-picked wins over everything. Someone looked at the picture and
+      // decided; geometry does not get to overrule that.
+      if (existing && !existing.auto && !existing.derived) {
         picked++;
         return { node: pad(other), yaw: existing.yaw, pitch: existing.pitch };
+      }
+
+      const geometric = deriveArrow(n, other, { alignment, previous, mirrored });
+
+      if (geometric !== null) {
+        derived++;
+        return {
+          node: pad(other),
+          yaw: round(geometric),
+          // Pitch cannot come from the plan without a scale, so it stays at the
+          // default and stays editable. Better an honest constant than a
+          // number that looks measured and is not.
+          pitch: existing?.derived ? existing.pitch : AUTO_PITCH,
+          derived: true,
+        };
       }
 
       auto++;
@@ -125,7 +145,7 @@ async function run(tour, opts) {
     expectedSingleLink: links.expectedSingleLink,
   });
 
-  report({ roster, adj: emitted, errors, warnings, picked, auto, alignment });
+  report({ roster, adj: emitted, errors, warnings, picked, auto, derived, alignment });
 
   if (errors.length) {
     console.error(red(`\n${errors.length} structural error(s) — nodes.json not written.\n`));
@@ -175,7 +195,8 @@ function checkOnDisk(nodes, roster, { start, links, slug }) {
     adj,
     errors,
     warnings,
-    picked: allLinks.filter((l) => !l.auto).length,
+    picked: allLinks.filter((l) => !l.auto && !l.derived).length,
+    derived: allLinks.filter((l) => l.derived).length,
     auto: allLinks.filter((l) => l.auto).length,
     alignment: Object.fromEntries(
       Object.entries(nodes.nodes).map(([id, n]) => [id, { pan: n.pan, todo: n.pan === 0 }]),
@@ -191,6 +212,43 @@ function checkOnDisk(nodes, roster, { start, links, slug }) {
 
   if (errors.length) process.exitCode = 1;
   else console.log(dim('--check: nothing written.\n'));
+}
+
+/**
+ * An arrow angle taken from the floor plan.
+ *
+ * Needs three things: both nodes placed on the plan, and the node being looked
+ * *from* anchored to it — which is what one sighting in the design tool
+ * records. Returns null when any of them is missing, so a tour that has not
+ * been through that step falls back to the arbitrary spread exactly as before.
+ *
+ * The bearing between two dots is the arrow's direction. No scale is involved,
+ * which is why this needs no calibration of the drawing.
+ */
+function deriveArrow(from, to, { alignment, previous, mirrored }) {
+  const here = alignment?.[pad(from)];
+  const planNorth = here?.planNorth;
+  if (!Number.isFinite(planNorth)) return null;
+
+  const a = previous?.nodes?.[pad(from)]?.map;
+  const b = previous?.nodes?.[pad(to)]?.map;
+  if (!isPoint(a) || !isPoint(b)) return null;
+
+  // Two nodes on the same spot have no bearing between them. That is a bad map
+  // point rather than a legitimate arrow, so it falls through to auto and shows
+  // up as one.
+  if (a.x === b.x && a.y === b.y) return null;
+
+  return arrowYaw({
+    planNorth,
+    pan: readPan(alignment, pad(from)),
+    bearing: planBearing(a, b),
+    mirrored,
+  });
+}
+
+function isPoint(p) {
+  return Number.isFinite(p?.x) && Number.isFinite(p?.y);
 }
 
 /**
@@ -223,7 +281,7 @@ function readPan(alignment, id) {
  * Reporting
  * ------------------------------------------------------------------ */
 
-function report({ roster, adj, errors, warnings, picked, auto, alignment }) {
+function report({ roster, adj, errors, warnings, picked, auto, derived = 0, alignment }) {
   const edges = [...adj.values()].reduce((sum, list) => sum + list.length, 0) / 2;
   const aligned = roster.filter((n) => {
     const entry = alignment?.[pad(n)];
@@ -232,7 +290,9 @@ function report({ roster, adj, errors, warnings, picked, auto, alignment }) {
 
   console.log(`\n${bold('Node graph')}`);
   console.log(`  ${roster.length} nodes, ${edges} edges`);
-  console.log(`  arrows    ${picked} picked, ${auto} auto-placed`);
+  console.log(
+    `  arrows    ${picked} picked, ${derived} from the plan, ${auto} auto-placed`,
+  );
   console.log(
     `  alignment ${aligned}/${roster.length}` +
       (aligned === 0 ? dim('  (run tools/align.html — every pan is 0° until then)') : ''),

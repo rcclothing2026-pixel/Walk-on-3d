@@ -66,6 +66,14 @@ const el = {
 const saved = new Map();
 
 let current = 1;
+
+/**
+ * Plan anchors, by node, read from alignment.json and written back unchanged.
+ *
+ * This tool does not set them — the design tool does — but it owns the file,
+ * so it has to hand them back.
+ */
+const anchors = new Map();
 let pan = 0;
 let dirty = false;
 let viewer = null;
@@ -423,11 +431,26 @@ function clearCurrent() {
  * which nodes are still untouched. Nodes never saved are marked so they cannot
  * be mistaken for a deliberate 0°.
  */
+/**
+ * The whole alignment file, rebuilt from what is in memory.
+ *
+ * `planNorth` is carried through untouched. It is written by the design tool
+ * and says how this panorama sits against the floor plan; this tool has no
+ * opinion about it, and rewriting the file without it would silently unpick
+ * every arrow derived from the plan.
+ *
+ * It survives a Clear too. Clearing says "this node is not aligned", which is
+ * a statement about `pan`; where the building is relative to the picture did
+ * not change.
+ */
 function buildObject() {
   const out = {};
+
   for (const n of NODES) {
-    out[pad(n)] = saved.has(n) ? { pan: saved.get(n) } : { pan: 0, todo: true };
+    const anchor = anchors.has(n) ? { planNorth: anchors.get(n) } : {};
+    out[pad(n)] = saved.has(n) ? { pan: saved.get(n), ...anchor } : { pan: 0, todo: true, ...anchor };
   }
+
   return out;
 }
 
@@ -467,9 +490,10 @@ async function loadExistingAlignment() {
     const data = await response.json();
     for (const [key, value] of Object.entries(data)) {
       const n = Number(key);
-      if (NODES.includes(n) && Number.isFinite(value?.pan) && !value.todo) {
-        saved.set(n, clampPan(round(value.pan)));
-      }
+      if (!NODES.includes(n)) continue;
+
+      if (Number.isFinite(value?.pan) && !value.todo) saved.set(n, clampPan(round(value.pan)));
+      if (Number.isFinite(value?.planNorth)) anchors.set(n, value.planNorth);
     }
 
     if (saved.size) toast(`Loaded ${saved.size} existing alignment(s)`);

@@ -15,6 +15,7 @@
 import { tourLink, tourSlug } from './save.js';
 
 const TOOLS = [
+  { id: 'design', label: 'Initial design — anchor', href: '/tour/tools/design.html' },
   { id: 'align', label: 'Align — set north', href: '/tour/tools/align.html' },
   { id: 'hotspots', label: 'Arrows — aim them', href: '/tour/tools/hotspots.html' },
   { id: 'map', label: 'Map — place on plan', href: '/tour/tools/map.html' },

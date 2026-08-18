@@ -92,9 +92,12 @@ actually is.
 3. **Photographs after that.** Now there are nodes to assign them to, and the
    plan tells you which photograph is which — node 12 is the one by the far
    door, so the picture showing the far door is node 12.
-4. **North, then arrows.** Alignment must be finished before arrows, because an
-   arrow is placed at an angle in a panorama that alignment rotates. Aim first
-   and align second and every arrow moves.
+4. **Anchor each node**, in initial design mode: one sighting fixes the
+   panorama against the plan and every arrow at that node follows from the
+   geometry. What is left is spot-fixing. If you do it by hand instead,
+   alignment must be finished before arrows — an arrow is an angle inside a
+   panorama that alignment rotates, so aiming first and aligning second moves
+   every arrow.
 5. **Walk it.** Open the tour and try to get lost. What you find will be
    missing links, not missing photographs.
 
@@ -119,10 +122,11 @@ Nothing below needs a terminal after `npm run dev`.
    the links into arrows.
 5. **Assign the photographs.** Back in the studio, drag each thumbnail onto its
    node, rename the nodes, then **process** to build the renditions.
-6. **Align and aim.** `tools/align.html` sets each panorama's north;
-   `tools/hotspots.html` puts each arrow where the doorway actually is. Align
-   every node before aiming any arrow — arrows are angles inside a panorama
-   that alignment rotates.
+6. **Anchor.** `tools/design.html` — one sighting per node, and every arrow in
+   the tour is derived from the plan. Then spot-fix: `tools/align.html` nudges a
+   panorama's north, `tools/hotspots.html` moves an arrow onto the doorway it
+   actually belongs on. Align before aiming — arrows are angles inside a
+   panorama that alignment rotates.
 7. **Build.** `npm run build` emits `dist/<slug>/` — that directory *is* the
    deliverable.
 
@@ -161,6 +165,63 @@ whole trip — forty rows, find the row again, click the next button along.
 
 Switching tool is a page load, so when two of them belong side by side there is
 the split view.
+
+## Initial design mode
+
+`tools/design.html` — the fast way to get from placed dots to a walkable tour.
+
+The long way is 42 alignments and 102 arrow placements. Most of that is work the
+geometry already knows: two dots on a plan give the bearing between them, and an
+arrow's yaw *is* that bearing once the panorama is fixed against the drawing.
+
+Fixing it takes one sighting. The tool puts the panorama beside the plan, names
+a neighbour, and draws the line to it:
+
+> **At 05 — turn until you can see 06, then Save & next.**
+
+That one act anchors the node. Every other arrow at 05 then falls out of the
+plan, and 144 judgements become 42.
+
+### What it writes
+
+Only `planNorth` in `alignment.json` — the panorama's own angle that points at
+the top of the plan. The arrows themselves are derived by
+`scripts/build-nodes.js`, so moving a dot later and rebuilding moves the arrows
+with it. The geometry is not trapped in the tool.
+
+Derived arrows are flagged `"derived": true`, which is what tells you at a
+glance which ones no human has ever looked at. Hand-picked angles always win:
+the build never overwrites a link someone aimed themselves.
+
+### The one thing it measures rather than assumes
+
+Whether the camera writes its frames the usual way round. Get that wrong and
+every derived arrow is mirrored about the sighting — which looks perfectly
+plausible in the arithmetic and is obviously broken on screen.
+
+So the first node asks for **two** sightings. The angle between two doorways is
+a fact about the building; if the picture disagrees with the plan about its
+sign, the frames are mirrored. The verdict is stored once per tour as
+`"mirrored"` in `tour.json`, and the tool reports the residual between the two
+sightings — a few degrees is aiming error, twenty means a map point is wrong or
+one sighting was on the wrong doorway. It says so rather than averaging it away.
+
+### What it cannot do
+
+**Pitch.** How steeply an arrow tilts depends on distance and camera height, and
+distance needs a scale for the drawing that nothing here has. Every derived
+arrow gets −20° and stays editable — an honest constant rather than a number
+that looks measured and is not.
+
+**Dog-legs.** Geometry points at where the neighbour *is*. If you reach it
+through a bent corridor, the doorway is somewhere else entirely. That is what
+the hotspot picker is still for.
+
+**Bad dots.** An arrow is only as good as the position it came from.
+
+Nothing here is final, and nothing here removes a tool. Align, arrows and map
+all still work exactly as before — this is a first pass that makes them a
+tidying job instead of the whole job.
 
 ## Split view
 

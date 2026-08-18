@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Initial design — Walk on 3D</title>
+    <link rel="stylesheet" href="./tools.css" />
+  </head>
+  <body class="design-body">
+    <header class="bar bar--top">
+      <div class="group">
+        <a id="home" class="btn" href="/tour/tools/studio.html" title="Tools, and this node elsewhere">☰</a>
+        <button id="prev" class="btn" title="Previous node (Page Up)">‹</button>
+        <select id="node" class="select" aria-label="Node"></select>
+        <button id="next" class="btn" title="Next node (Page Down)">›</button>
+      </div>
+
+      <div class="group group--name">
+        <span id="node-name" class="node-name" dir="rtl"></span>
+        <span id="node-state" class="tag"></span>
+      </div>
+
+      <div class="group">
+        <span id="progress" class="progress"></span>
+        <button id="save" class="btn btn--primary" title="Anchor this node and move on">Save &amp; next</button>
+      </div>
+    </header>
+
+    <div class="design">
+      <section class="design__pano">
+        <div id="viewer" class="viewer viewer--inset"></div>
+        <div id="crosshair" class="crosshair" aria-hidden="true">
+          <svg viewBox="-40 -40 80 80">
+            <line x1="-34" y1="0" x2="-10" y2="0" />
+            <line x1="10" y1="0" x2="34" y2="0" />
+            <line x1="0" y1="-34" x2="0" y2="-10" />
+            <line x1="0" y1="10" x2="0" y2="34" />
+            <circle cx="0" cy="0" r="3" />
+          </svg>
+        </div>
+        <p id="sight-label" class="sight-label"></p>
+      </section>
+
+      <section class="design__plan">
+        <div id="plan-wrap" class="plan-wrap">
+          <img id="plan" class="plan" alt="Floor plan" />
+          <svg id="overlay" class="plan-overlay"></svg>
+        </div>
+      </section>
+    </div>
+
+    <footer class="bar bar--bottom">
+      <span class="slider-label">sight</span>
+      <select id="target" class="select" aria-label="Which neighbour you are looking at"></select>
+      <button id="record" class="btn">Record sighting</button>
+      <span id="hint" class="design__hint"></span>
+      <span id="calibration" class="tag" hidden></span>
+      <button id="skip" class="btn" title="Leave this node alone and move on">Skip</button>
+    </footer>
+
+    <div id="status" class="status" hidden></div>
+
+    <script type="module" src="./design.js"></script>
+  </body>
+</html>

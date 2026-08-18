@@ -18,6 +18,12 @@
 import { tourLink, tourSlug, withTour } from './save.js';
 
 const TOOLS = [
+  {
+    id: 'design',
+    label: 'Initial design',
+    href: '/tour/tools/design.html',
+    hint: 'anchor it to the plan — arrows follow',
+  },
   { id: 'align', label: 'Align', href: '/tour/tools/align.html', hint: 'set this node’s north' },
   { id: 'hotspots', label: 'Arrows', href: '/tour/tools/hotspots.html', hint: 'aim its floor arrows' },
   { id: 'map', label: 'Map', href: '/tour/tools/map.html', hint: 'place it on the plan' },

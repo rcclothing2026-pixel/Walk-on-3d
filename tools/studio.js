@@ -34,6 +34,7 @@ const el = {
   logClose: document.getElementById('log-close'),
   openTour: document.getElementById('open-tour'),
   split: document.getElementById('split'),
+  design: document.getElementById('design'),
   status: document.getElementById('status'),
 };
 
@@ -127,6 +128,7 @@ async function loadTours() {
   syncUrl();
   el.openTour.href = tourLink('/tour/');
   el.split.href = tourLink('/tour/tools/split.html');
+  el.design.href = tourLink('/tour/tools/design.html');
 }
 
 function selectTour(next) {

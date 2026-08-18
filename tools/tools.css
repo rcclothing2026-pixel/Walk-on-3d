@@ -1166,3 +1166,114 @@ body {
 .panes.is-dragging .divider {
   background: var(--accent);
 }
+
+/* ---------- initial design mode ---------- */
+
+.design {
+  position: absolute;
+  inset: var(--bar-h) 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.design__pano,
+.design__plan {
+  position: relative;
+  overflow: hidden;
+}
+
+.design__plan {
+  display: grid;
+  place-items: center;
+  border-left: 1px solid var(--line);
+  padding: 12px;
+}
+
+.viewer--inset {
+  position: absolute;
+  inset: 0;
+}
+
+/* Centred on the panorama pane, not the window: what the crosshair sits on is
+   the whole measurement, so it must not drift when the plan pane resizes. */
+.crosshair {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 10;
+  width: 80px;
+  height: 80px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.crosshair svg {
+  width: 100%;
+  height: 100%;
+}
+
+.crosshair line,
+.crosshair circle {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 2;
+  filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.9));
+}
+
+.sight-label {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  z-index: 10;
+  margin: 0;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.6);
+  font: 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.sight-label[data-kind="muted"] {
+  color: var(--muted);
+}
+
+.sight-label[data-kind="ok"] {
+  color: var(--ok);
+}
+
+.design__hint {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* The node being sighted, and the ones already done. */
+.plan-dot.is-target circle {
+  fill: var(--warn);
+}
+
+.plan-dot.is-anchored circle {
+  stroke: var(--ok);
+  stroke-width: 2;
+}
+
+.plan-edge.is-done {
+  stroke: var(--ok);
+  opacity: 0.7;
+}
+
+.tag[data-kind="ok"] {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.tag[data-kind="warn"] {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.status[data-kind="warn"] {
+  border-color: var(--warn);
+}
