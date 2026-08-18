@@ -73,7 +73,24 @@ else
   ok "dependencies installed"
 fi
 
-node -e "require('sharp')" 2>/dev/null && ok "sharp loads" || die "sharp did not load — the image pipeline will not work."
+# sharp is the one dependency that can fail for a reason apt cannot fix: its
+# prebuilt libvips is compiled for x86-64-v2, and a pre-2010 CPU does not
+# implement those instructions. That stops image processing; it does not stop
+# the studio, so it is reported rather than fatal.
+if node -e "require('sharp')" >/dev/null 2>&1; then
+  ok "sharp loads — the image pipeline will run here"
+else
+  warn "sharp will not load on this CPU."
+  say  "  Placing, linking and anchoring all work without it. Only building"
+  say  "  renditions from raw photographs needs it."
+  say  ""
+  say  "  This machine reports:"
+  say  "    $(lscpu 2>/dev/null | grep -m1 '^Model name' | sed 's/Model name: *//')"
+  say  ""
+  say  "  The portable build costs about 3× the time and no compiling:"
+  say  "    npm install --cpu=wasm32 sharp"
+  say  ""
+fi
 
 # ── the key ──────────────────────────────────────────────────────────────────
 mkdir -p "$CONF_DIR"
@@ -143,6 +160,8 @@ if systemctl --user is-active --quiet walk-studio; then
 else
   warn "service did not come up — bash deploy/linux/install.sh --logs"
 fi
+
+node -e "require('sharp')" >/dev/null 2>&1 || warn "image processing is off until sharp loads (see above)"
 
 TOKEN="$(grep '^WALK_TOKEN=' "$ENV_FILE" | cut -d= -f2-)"
 cat <<EOF
