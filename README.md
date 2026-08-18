@@ -97,6 +97,22 @@ dist/<slug>/       the built bundle for that venue
 hundreds of megabytes, and nothing that large should be inside the folder that
 describes a venue.
 
+## The ☰ drawer
+
+Every tool carries the studio's per-node actions with it. The **☰** button opens
+a drawer holding the other tools — **Align**, **Arrows**, **Map** — each pointed
+at the node you are already on, plus **Open the tour here**, **Rebuild this
+photo**, **Rebuild the graph**, a venue switcher, and the way back to the studio.
+
+Building a tour means visiting the same node in three tools: set its north, aim
+its arrows, put it on the plan. Going back to the studio between each was the
+whole trip — forty rows, find the row again, click the next button along.
+
+Switching tool is still a page load. Each tool owns a viewer, a floor plan or a
+panorama decode, and merging them into one page would mean holding all of that
+at once to save a reload that takes a moment. What was slow was the navigation,
+not the load.
+
 ## The studio
 
 `/tour/tools/studio.html` — a venue picker, then one screen per venue: every

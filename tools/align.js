@@ -18,7 +18,7 @@
  * the tour never displays an absolute bearing.
  *
  * There is no localStorage by project rule, so values live in memory only.
- * Download the JSON to src/data/alignment.json before closing the tab; the
+ * Saving writes the tour's own alignment.json; the
  * page warns on unload while anything is unsaved.
  */
 
@@ -27,7 +27,8 @@ import '@photo-sphere-viewer/core/index.css';
 
 import { panoUrl, dataUrl } from '../src/lib/paths.js';
 import { loadTourData } from '../src/lib/tour-data.js';
-import { downloadJson, saveData, wireHome } from './save.js';
+import { downloadJson, saveData } from './save.js';
+import { mountNav } from './nav.js';
 
 /** Filled once the tour's roster has loaded. */
 let NODES = [];
@@ -71,7 +72,7 @@ let viewer = null;
 start();
 
 async function start() {
-  wireHome();
+  mountNav({ tool: 'align', node: () => current });
   tourData = await loadTourData();
   NODES = tourData.numbers();
   current = initialNode();
@@ -171,8 +172,8 @@ function showMissingPanorama(node, err) {
   showStatus(
     `<strong>Node ${pad(node)} has no panorama yet.</strong><br />` +
       `Expected <code>${file}</code><br /><br />` +
-      `Put the source in <code>raw/${pad(node)}.jpg</code> and run ` +
-      `<code>npm run process -- --only=${node}</code>.`,
+      'Assign it a photo in the studio, then press ' +
+      '<strong>Rebuild this photo</strong> in the &#9776; menu.',
     'error',
   );
   console.warn(`[align] could not load ${file}`, err);
@@ -435,7 +436,7 @@ async function copyJson() {
   }
 }
 
-/** Writes straight to src/data/alignment.json via the studio API. */
+/** Writes straight to the tour's alignment.json via the studio API. */
 async function persist() {
   const result = await saveData('alignment', buildObject());
 

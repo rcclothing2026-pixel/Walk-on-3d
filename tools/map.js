@@ -12,12 +12,13 @@
  *
  * Click the plan to place the selected node; placing jumps to the next unplaced
  * node so the list can be worked straight through. Download writes the merged
- * nodes.json over src/data/nodes.json.
+ * nodes.json and links.json into the tour's own folder.
  */
 
 import { floorplanUrl, dataUrl } from '../src/lib/paths.js';
 import { loadTourData } from '../src/lib/tour-data.js';
-import { downloadJson, saveData, wireHome, withTour } from './save.js';
+import { downloadJson, saveData, withTour } from './save.js';
+import { mountNav } from './nav.js';
 
 let NODES = [];
 let tourData = null;
@@ -76,7 +77,7 @@ let dirty = false;
 start();
 
 async function start() {
-  wireHome();
+  mountNav({ tool: 'map', node: () => current });
   tourData = await loadTourData();
   NODES = tourData.numbers();
 

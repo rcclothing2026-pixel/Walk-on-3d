@@ -18,7 +18,7 @@
  * flagged on the row rather than silently accepted.
  *
  * No localStorage by project rule — "Download all" writes the merged
- * nodes.json, which replaces src/data/nodes.json.
+ * nodes.json, which is written back to the tour's own folder.
  */
 
 import { Viewer } from '@photo-sphere-viewer/core';
@@ -28,7 +28,8 @@ import '@photo-sphere-viewer/markers-plugin/index.css';
 
 import { panoUrl, dataUrl } from '../src/lib/paths.js';
 import { loadTourData } from '../src/lib/tour-data.js';
-import { downloadJson, saveData, wireHome } from './save.js';
+import { downloadJson, saveData } from './save.js';
+import { mountNav } from './nav.js';
 
 let NODES = [];
 let tourData = null;
@@ -71,7 +72,7 @@ let placementEnabled = true;
 start();
 
 async function start() {
-  wireHome();
+  mountNav({ tool: 'hotspots', node: () => current });
   tourData = await loadTourData();
   NODES = tourData.numbers();
 
@@ -94,8 +95,9 @@ async function loadTour() {
   } catch {
     showStatus(
       '<strong>No node graph yet.</strong><br /><br />' +
-        'Run <code>npm run nodes</code> to generate ' +
-        '<code>src/data/nodes.json</code> from the link graph, then reload.',
+        'Arrows are derived from the links between nodes, and this tour has ' +
+        'none yet. Draw them in the map tool (&#9776; &rarr; Map), press ' +
+        '<strong>Rebuild</strong> there, then come back.',
       'error',
     );
     return null;
@@ -175,8 +177,8 @@ function showMissingPanorama(node, err) {
   showStatus(
     `<strong>Node ${pad(node)} has no panorama yet.</strong><br />` +
       `Expected <code>${panoUrl(node, RENDITION)}</code><br /><br />` +
-      `Put the source in <code>raw/${pad(node)}.jpg</code> and run ` +
-      `<code>npm run process -- --only=${node}</code>.`,
+      'Assign it a photo in the studio, then press ' +
+      '<strong>Rebuild this photo</strong> in the &#9776; menu.',
     'error',
   );
   console.warn(`[hotspots] could not load node ${pad(node)}`, err);
@@ -429,7 +431,7 @@ async function copyNodeJson() {
   }
 }
 
-/** Writes straight to src/data/nodes.json via the studio API. */
+/** Writes straight to the tour's nodes.json via the studio API. */
 async function downloadTour() {
   const result = await saveData('nodes', tour);
 
