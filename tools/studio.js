@@ -211,7 +211,7 @@ function renderTray() {
     .map(
       (photo) => `
       <figure class="chip" draggable="true" data-file="${escapeHtml(photo.file)}">
-        <img src="${API}/preview?file=${encodeURIComponent(photo.file)}" alt="" loading="lazy" />
+        <img src="${withTour('/preview', { file: photo.file })}" alt="" loading="lazy" />
         <figcaption>${escapeHtml(photo.file)}</figcaption>
       </figure>`,
     )
@@ -241,7 +241,10 @@ function renderCards(totals) {
       title: '1 · Photos',
       done: totals.processed,
       total: totals.nodes,
-      hint: 'Drop exports into raw/, then build',
+      // The real folder, not a hardcoded `raw/` — every venue points somewhere
+      // different, and telling an operator the wrong place to put photographs
+      // is worse than telling them nothing.
+      hint: `Drop exports into ${state.rawDir ?? 'the tour\u2019s photo folder'}, then build`,
       action: totals.raw > totals.processed ? { label: 'Build all', run: processAll } : null,
     },
     {
@@ -301,7 +304,7 @@ function renderRows() {
         <td class="grid__photo" data-drop="${node.node}">
           ${
             node.source
-              ? `<img src="${API}/preview?file=${encodeURIComponent(node.source)}"
+              ? `<img src="${withTour('/preview', { file: node.source })}"
                       alt="" loading="lazy" title="${escapeHtml(node.source)}" />
                  <span class="grid__file ${node.assigned ? 'is-explicit' : ''}">
                    ${escapeHtml(node.source)}
@@ -433,7 +436,7 @@ async function processNode(node) {
   openLog(`Building node ${id}…`, 'Running the image pipeline. Large decodes take a moment.');
 
   try {
-    const response = await fetch(`${API}/process`, {
+    const response = await fetch(withTour('/process'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ node }),
@@ -463,7 +466,7 @@ async function processAll() {
       `Node ${node.id} — ${node.name}\n\nThis runs one node at a time; leave the tab open.`,
     );
 
-    await fetch(`${API}/process`, {
+    await fetch(withTour('/process'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ node: node.node }),
