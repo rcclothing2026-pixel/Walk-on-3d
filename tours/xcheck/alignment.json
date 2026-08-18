@@ -1,0 +1,5 @@
+{
+  "01": { "pan": 100, "planNorth": 100, "sight": { "raw": 100, "target": "03" } },
+  "03": { "pan": 42.5, "planNorth": 42.5, "sight": { "raw": 200, "target": "04" } },
+  "04": { "pan": 0, "todo": true }
+}

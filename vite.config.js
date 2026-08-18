@@ -3,6 +3,7 @@ import path from 'node:path';
 import { defineConfig } from 'vite';
 
 import { devApi } from './scripts/dev-api.js';
+import { gate } from './scripts/gate.js';
 
 /**
  * A built tour is self-contained — its page, data, floor plan and panoramas all
@@ -33,7 +34,9 @@ export default defineConfig({
   },
   // Both plugins are dev-only (`apply: 'serve'`): they read and write project
   // files, so they must never be part of a build.
-  plugins: [serveTours(), devApi()],
+  // gate() is first on purpose: when WALK_TOKEN is set nothing else gets to see
+  // the request until the caller has proved who they are.
+  plugins: [gate(), serveTours(), devApi()],
 });
 
 /** Serves each tour's data, floor plan and panoramas in its deployed shape. */
