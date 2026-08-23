@@ -284,7 +284,7 @@ async function openNode(node) {
       viewer.addEventListener('panorama-error', () => {
         if (!loadingPanorama) return;
         loadingPanorama = false;
-        showMissingPanorama(current);
+        explainPanoramaFailure(current);
       });
       viewer.addEventListener('panorama-loaded', () => {
         loadingPanorama = false;
@@ -397,6 +397,45 @@ function setEnabled(enabled) {
   el.crosshair.hidden = !usable || mode !== 'sight';
   document.body.classList.toggle('is-blocked', !usable);
   syncHint();
+}
+
+/**
+ * Why the sphere did not load.
+ *
+ * Photo Sphere Viewer reports that an image failed, never what the server said
+ * about it, so ask. The distinction is the whole point: one node without a
+ * photograph is work for the studio, while a panos root that is not mounted is
+ * work for the machine — and every node will say the same thing until someone
+ * goes and looks. Until this asked, both were "no panorama yet".
+ */
+async function explainPanoramaFailure(node) {
+  setEnabled(false);
+
+  let status = 0;
+  try {
+    const res = await fetch(panoUrl(node, RENDITION), { method: 'HEAD', cache: 'no-store' });
+    status = res.status;
+  } catch {
+    // Offline, or the studio went away mid-question. The missing-photo message
+    // below is the honest answer when we cannot get a better one.
+  }
+
+  // The operator moved on while we were asking; whatever is on screen now
+  // belongs to another node.
+  if (node !== current) return;
+
+  if (status === 503) {
+    showStatus(
+      '<strong>The panoramas are not mounted.</strong><br /><br />' +
+        'Every node will fail until <code>panos/</code> resolves on the studio machine. ' +
+        'Nothing is wrong with the roster and no photograph is missing — check the ' +
+        'directory, or the symlink pointing at it.',
+      'error',
+    );
+    return;
+  }
+
+  showMissingPanorama(node);
 }
 
 function showMissingPanorama(node) {

@@ -661,6 +661,13 @@ service alongside the studio. Both come back after a reboot at the same address.
 The tunnel dials **out**, so nothing is open on the machine and nothing depends
 on your home IP address staying still.
 
+**This project's studio is at `https://walk.linetea.ir`.** The tools hang off
+it — design mode is `/tour/tools/design.html?tour=hammam`. There is no key in
+this file and there should never be one: ask the machine for it with
+`bash deploy/linux/install.sh --token`. The address is not a deployment. It is
+one Linux box answering through a tunnel, and it is up only while the two user
+services on that box are.
+
 ```bash
 bash deploy/linux/tunnel.sh --status
 bash deploy/linux/tunnel.sh --logs
@@ -692,6 +699,46 @@ bash deploy/linux/tunnel.sh --protocol http2
 not the same question as "connected" — it counts connections actually
 registered in the last three minutes, and names QUIC as the cause when it sees
 it.
+
+### When it stops answering
+
+A 502 from the hostname means Cloudflare is up and the origin is not. Ask the
+two services, in this order — the second is the one people forget:
+
+```bash
+bash deploy/linux/install.sh --status     # is the studio on :5173?
+bash deploy/linux/tunnel.sh   --status    # is cloudflared connected?
+```
+
+Three failures account for nearly all of it:
+
+| what you see | what it is |
+|---|---|
+| `status=200/CHDIR`, restarting forever | the checkout moved; the unit still points at where it was |
+| `Linger=no`, both services gone after logout | `sudo loginctl enable-linger $(id -un)` |
+| tunnel `active (running)`, no connections | QUIC throttled — `tunnel.sh --protocol http2` |
+
+**A moved checkout takes two things with it, not one.** The unit's
+`WorkingDirectory` is absolute, and so is whatever `panos` points at. Re-running
+the installer from the checkout's new home fixes the first:
+
+```bash
+cd /path/to/Walk-on-3d && bash deploy/linux/install.sh
+```
+
+The second is quieter, and used to be much quieter than it is now. `panos` is a
+symlink to storage outside the repo; when it dangles, every node loads nothing
+and design mode reports each one as a photograph nobody has taken. It now says
+so plainly instead — the studio warns at startup, naming the unresolved target,
+and the dev server answers a panorama request with **503** rather than a 404
+that reads as an unshot node. Repointing it is one line:
+
+```bash
+ln -sfn /path/to/Walk-on-3d-panos panos
+```
+
+Both are absolute paths that no longer exist, and both are one command. The
+cost is entirely in not knowing which one you are looking at.
 
 **One trap it disarms for you.** Vite refuses requests whose `Host` header it
 does not recognise — that is what stops a stranger's DNS record from pointing at
@@ -817,6 +864,17 @@ plan 33/34/35/36/37/38 line up with table 34/35/36/37/38/39 (اتاق مخفی �
 applied mechanically — at least one extra point has been inserted somewhere in
 the low range, and the photo is too perspective-distorted to say where with
 confidence.
+
+**The panoramas answer part of it.** `panos/hammam/` holds 43 sets of
+renditions, `01` through `43` with no gaps, while `nodes.json`, `names.json`
+and `alignment.json` all carry the same 42 ids — `01`, then `03` to `43`.
+Exactly one node was shot, processed and then left out of the table:
+**node 02**. Given the brief describes nodes 1–3 as the stair descent —
+سر پله / میان پله / پای پله — and the roster keeps سر پله at `01` and
+پای پله at `03`, the dropped one is میان پله, the mid-stair point. That is
+consistent with an extra point inserted low in the range, which is what the
+offset above could not locate. `02-mid.jpg` exists and can be opened, so this
+is settleable by looking rather than by inference.
 
 **Which numbering is authoritative?** Everything downstream keys off the
 answer. Until it is settled, `tours/hammam/names.json` still holds the brief's 43

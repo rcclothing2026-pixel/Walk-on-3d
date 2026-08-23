@@ -68,14 +68,90 @@ function serveTours() {
         if (!isSafeSlug(slug) || !tail) return next();
 
         const file = resolve(root, slug, tail);
-        if (!file || !isFile(file)) return next();
+        if (!file) return next();
+        if (!isFile(file)) return missing(res, root, slug, tail);
 
         res.setHeader('Content-Type', contentType(file));
         res.setHeader('Cache-Control', 'no-cache');
         fs.createReadStream(file).pipe(res);
       });
+
+      reportPanoRoots(root, server.config.logger);
     },
   };
+}
+
+/**
+ * A tour asset that is not there.
+ *
+ * This used to be next(), which handed the request to Vite's HTML fallback:
+ * a panorama answered with index.html and a 200. The browser then cached a
+ * page at an image's URL, the viewer booted with no tour selected, and
+ * nothing anywhere said the word "missing".
+ *
+ * So answer it here, and separate the two cases that look identical from the
+ * outside. One absent file among present ones is a node nobody has shot yet.
+ * An absent panos root is storage that is not there — every node will fail
+ * and no amount of re-shooting will help.
+ */
+function missing(res, root, slug, tail) {
+  const unmounted = tail.startsWith('panos/') && !isDir(panoRoot(root, slug));
+
+  res.statusCode = unmounted ? 503 : 404;
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  // Never cached. A 404 that outlives the thing that caused it is worse than
+  // no answer at all — it survives the fix and keeps reporting the old world.
+  res.setHeader('Cache-Control', 'no-store');
+  res.end(
+    unmounted
+      ? `Panoramas for "${slug}" are not mounted: ${panoRoot(root, slug)} does not resolve.\n`
+      : `No such file in tour "${slug}": ${tail}\n`,
+  );
+}
+
+/**
+ * Say it once, at startup, in the log the service keeps.
+ *
+ * A dangling panos symlink is invisible until someone opens a node, and then
+ * it reports itself forty-three times as "no panorama yet" — which reads as a
+ * venue nobody has photographed rather than a disk nobody has mounted.
+ */
+function reportPanoRoots(root, logger) {
+  const base = path.join(root, 'panos');
+
+  if (isLink(base) && !isDir(base)) {
+    logger.warn(
+      `  panos -> ${readLink(base)} does not resolve.\n` +
+        '  Every panorama will be missing until that path is back.',
+      { timestamp: true },
+    );
+    return;
+  }
+
+  if (!isDir(base)) {
+    logger.warn(`  ${base} does not exist — no venue has panoramas.`, { timestamp: true });
+    return;
+  }
+
+  const bare = tourSlugs(root).filter((slug) => !isDir(panoRoot(root, slug)));
+  if (bare.length) {
+    logger.warn(`  no panoramas for: ${bare.join(', ')}`, { timestamp: true });
+  }
+}
+
+function tourSlugs(root) {
+  try {
+    return fs
+      .readdirSync(path.join(root, 'tours'), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+  } catch {
+    return [];
+  }
+}
+
+function panoRoot(root, slug) {
+  return path.join(root, 'panos', slug);
 }
 
 /**
@@ -111,6 +187,32 @@ function isFile(file) {
     return fs.statSync(file).isFile();
   } catch {
     return false;
+  }
+}
+
+// statSync follows symlinks, so this answers "is there a directory at the end
+// of this path", which is the question a dangling link gets wrong.
+function isDir(dir) {
+  try {
+    return fs.statSync(dir).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function isLink(file) {
+  try {
+    return fs.lstatSync(file).isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
+function readLink(file) {
+  try {
+    return fs.readlinkSync(file);
+  } catch {
+    return '(unreadable)';
   }
 }
 

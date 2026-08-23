@@ -32,10 +32,38 @@ ok()   { printf "  ${G}✓${N} %s\n" "$1"; }
 warn() { printf "  ${Y}!${N} %s\n" "$1"; }
 die()  { printf "\n  ${R}✗${N} %s\n\n" "$1"; exit 1; }
 
+# ── why it is not running ────────────────────────────────────────────────────
+#
+# `systemctl status` prints the symptom and leaves you to recognise it, and
+# 200/CHDIR is the one worth naming outright: systemd could not enter
+# WorkingDirectory, so the checkout has been moved or deleted while the unit
+# still points where it used to be. Not one line of the studio has run, and
+# the failure repeats every RestartSec until the start limit stops it.
+diagnose() {
+  local recent want
+  recent="$(journalctl --user -u walk-studio -n 200 --no-pager 2>/dev/null || true)"
+  grep -q 'status=200/CHDIR' <<<"$recent" || return 0
+
+  want="$(systemctl --user show walk-studio -p WorkingDirectory --value 2>/dev/null)"
+  want="${want#-}"
+
+  printf "\n"
+  warn "the service cannot enter its working directory:"
+  say  ""
+  say  "    ${want:-(unset)}"
+  say  ""
+  say  "  The checkout has moved or been deleted. Re-run this installer from"
+  say  "  wherever it is now — the unit is rewritten to match:"
+  say  ""
+  say  "    bash deploy/linux/install.sh"
+  printf "\n"
+}
+
 # ── what the caller asked for ────────────────────────────────────────────────
 case "${1:-install}" in
   --status)
     systemctl --user status walk-studio --no-pager 2>/dev/null || say "not installed as a service yet"
+    diagnose
     exit 0 ;;
   --token)
     [[ -f "$ENV_FILE" ]] || die "no studio configured yet — run without arguments first"
@@ -45,6 +73,11 @@ case "${1:-install}" in
     journalctl --user -u walk-studio -n 60 --no-pager 2>/dev/null || say "no logs yet"
     exit 0 ;;
 esac
+
+# The unit's WorkingDirectory is $REPO, and a wrong one fails at 200/CHDIR
+# every five seconds rather than saying anything. Cheaper to check it here.
+[[ -f "$REPO/package.json" ]] && grep -q '"walk-on-3d"' "$REPO/package.json" 2>/dev/null \
+  || die "$REPO does not look like the Walk on 3D checkout — run this from inside it."
 
 printf "\n  ${D}Tour studio — %s${N}\n\n" "$REPO"
 
@@ -126,6 +159,12 @@ Description=Walk on 3D — tour studio
 Documentation=https://github.com/rcclothing2026-pixel/Walk-on-3d
 After=network-online.target
 Wants=network-online.target
+# Give up rather than loop. systemd's defaults are 5 starts per 10 seconds,
+# which RestartSec=5 can never reach — two attempts per window, forever, in
+# silence. A studio that cannot start needs a person, and a unit in `failed`
+# says so where `activating` does not.
+StartLimitIntervalSec=120
+StartLimitBurst=5
 
 [Service]
 Type=simple
