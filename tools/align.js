@@ -32,6 +32,7 @@ import {
   hideStatus,
   initialNode,
   nodeOptions,
+  reportStartupFailure,
   showStatus,
   toast,
   wireUnloadGuard,
@@ -95,7 +96,7 @@ let dirty = false;
 let savedToDisk = null;
 let viewer = null;
 
-start();
+start().catch((err) => reportStartupFailure(el.status, err));
 
 async function start() {
   mountNav({ tool: 'align', node: () => current });

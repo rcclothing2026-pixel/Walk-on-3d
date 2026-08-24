@@ -71,6 +71,30 @@ export function hideStatus(statusEl) {
 }
 
 /**
+ * Reports a tool that never got off the ground.
+ *
+ * A tool whose data did not load used to die mid-startup, leaving an empty
+ * page — no roster, no plan, no panorama, and nothing on screen to say why.
+ * Whatever went wrong belongs where the operator can read it: a locked door,
+ * a file the studio machine does not have, a dev server that is not running.
+ */
+export function reportStartupFailure(statusEl, err) {
+  console.error('[tool] startup failed:', err);
+  const message = escapeHtml(err?.message ?? String(err));
+
+  const hint = /401/.test(message)
+    ? 'The studio is behind a key. Add <code>?key=…</code> to the address once — ' +
+      'this browser then stays signed in — and reload.'
+    : /404/.test(message)
+      ? 'That file does not exist on the studio machine. Check the tour\u2019s folder there.'
+      : 'Is <code>npm run dev</code> running on the studio machine, and are the ' +
+        'tour\u2019s data files there with it?';
+
+  showStatus(statusEl, `<strong>This tool could not start.</strong><br /><br />` +
+    `<code>${message}</code><br /><br />${hint}`, 'error');
+}
+
+/**
  * Warns before an unload that would lose work.
  *
  * No localStorage by project rule, so unsaved edits are genuinely losable —

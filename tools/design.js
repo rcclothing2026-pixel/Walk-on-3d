@@ -35,7 +35,7 @@ import {
   rawAngle,
 } from '../src/lib/geometry.js';
 import { downloadJson, saveData, postTour, withTour } from './save.js';
-import { escapeHtml, hideStatus, nodeOptions, showStatus, toast } from './lib.js';
+import { escapeHtml, hideStatus, nodeOptions, reportStartupFailure, showStatus, toast } from './lib.js';
 import { mountNav } from './nav.js';
 import { announceNode, connectFrame } from './frame.js';
 
@@ -153,7 +153,7 @@ let dirty = false;
  */
 let loadingPanorama = false;
 
-start();
+start().catch((err) => reportStartupFailure(el.status, err));
 
 async function start() {
   mountNav({ tool: 'design', node: () => current });

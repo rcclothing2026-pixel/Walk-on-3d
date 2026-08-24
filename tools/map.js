@@ -23,6 +23,7 @@ import {
   hideStatus,
   initialNode,
   nodeOptions,
+  reportStartupFailure,
   showStatus,
   toast,
 } from './lib.js';
@@ -83,7 +84,7 @@ let linkFrom = null;
 /** Whether anything has been placed or linked since the last successful save. */
 let dirty = false;
 
-start();
+start().catch((err) => reportStartupFailure(el.status, err));
 
 async function start() {
   mountNav({ tool: 'map', node: () => current });

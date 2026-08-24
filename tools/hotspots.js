@@ -34,6 +34,7 @@ import {
   hideStatus,
   initialNode,
   nodeOptions,
+  reportStartupFailure,
   showStatus,
   toast,
   wireUnloadGuard,
@@ -88,7 +89,7 @@ let placementEnabled = true;
  */
 let savedToDisk = null;
 
-start();
+start().catch((err) => reportStartupFailure(el.status, err));
 
 async function start() {
   mountNav({ tool: 'hotspots', node: () => current });
