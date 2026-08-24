@@ -15,9 +15,17 @@
  * nodes.json and links.json into the tour's own folder.
  */
 
-import { floorplanUrl, dataUrl } from '../src/lib/paths.js';
+import { floorplanUrl, dataUrl, nodeId as pad } from '../src/lib/paths.js';
 import { loadTourData } from '../src/lib/tour-data.js';
-import { downloadJson, saveData, withTour } from './save.js';
+import { downloadJson, saveData, postTour } from './save.js';
+import {
+  escapeHtml,
+  hideStatus,
+  initialNode,
+  nodeOptions,
+  showStatus,
+  toast,
+} from './lib.js';
 import { mountNav } from './nav.js';
 import { announceNode, connectFrame } from './frame.js';
 
@@ -137,13 +145,14 @@ function loadPlan(src = floorplanUrl()) {
     };
 
     const onLoad = () => {
-      hideStatus();
+      hideStatus(el.status);
       fitToWindow();
       settle(true);
     };
 
     const onError = () => {
       showStatus(
+        el.status,
         '<strong>No floor plan yet.</strong><br /><br />' +
           'Use <strong>Floor plan…</strong> below to upload the venue plan — ' +
           'a PNG, a JPG, or the architect\u2019s PDF.',
@@ -230,7 +239,7 @@ async function addNodeHere(point) {
   // the last save is written out first rather than thrown away.
   if (!(await saveAll())) return;
 
-  const result = await post('/add-node-at', { x: point.x, y: point.y });
+  const result = await postTour('/add-node-at', { x: point.x, y: point.y });
   if (result.error) {
     toast(result.error, 'error');
     return;
@@ -607,11 +616,12 @@ async function rebuild() {
     return;
   }
 
-  const result = await post('/rebuild', {});
+  const result = await postTour('/rebuild', {});
   el.rebuild.disabled = false;
 
   if (result.error || result.ok === false) {
     showStatus(
+      el.status,
       `<strong>Rebuild failed.</strong><br /><br /><code>${escapeHtml(
         result.error ?? result.output ?? '',
       )}</code>`,
@@ -650,6 +660,7 @@ async function uploadPlan(file) {
     toast('Floor plan ready');
   } catch (err) {
     showStatus(
+      el.status,
       `<strong>Could not use that file.</strong><br /><br /><code>${escapeHtml(err.message)}</code>`,
       'error',
     );
@@ -694,19 +705,6 @@ function offerRescale(before) {
 
   dirty = true;
   toast(`Scaled ${placed.length} point(s) to the new plan`);
-}
-
-async function post(endpoint, payload) {
-  try {
-    const response = await fetch(withTour(endpoint), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    return await response.json();
-  } catch (err) {
-    return { error: err.message };
-  }
 }
 
 /* ------------------------------------------------------------------ *
@@ -757,43 +755,6 @@ function nodeData() {
 }
 
 function buildNodeOptions() {
-  el.node.innerHTML = NODES.map((n) => {
-    const { name } = tourData.info(n);
-    return `<option value="${n}">${pad(n)} — ${escapeHtml(name)}</option>`;
-  }).join('');
+  el.node.innerHTML = nodeOptions(NODES, (n) => tourData.info(n));
 }
 
-function initialNode() {
-  const requested = Number(new URLSearchParams(location.search).get('node'));
-  return NODES.includes(requested) ? requested : NODES[0];
-}
-
-function pad(n) {
-  return String(n).padStart(2, '0');
-}
-
-function escapeHtml(value) {
-  return String(value).replace(
-    /[&<>"]/g,
-    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c],
-  );
-}
-
-function hideStatus() {
-  el.status.hidden = true;
-}
-
-function showStatus(html, kind = 'info') {
-  el.status.innerHTML = html;
-  el.status.dataset.kind = kind;
-  el.status.hidden = false;
-}
-
-function toast(message, kind = 'ok') {
-  const node = document.createElement('div');
-  node.className = 'toast';
-  node.dataset.kind = kind;
-  node.textContent = message;
-  document.body.append(node);
-  setTimeout(() => node.remove(), 2000);
-}

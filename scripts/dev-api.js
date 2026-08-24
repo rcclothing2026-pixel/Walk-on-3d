@@ -28,6 +28,7 @@ import { mkdir, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { RENDITION_ORDER, nodeId, panoFilename } from '../src/lib/paths.js';
+import { generateNodes, staleness } from './generate-graph.js';
 import { ROOT, TOURS_DIR, assertSlug, listTours, readJson, tourPaths } from './tours.js';
 import { loadRoster } from './roster.js';
 import { findRaw, listRaw } from './raw.js';
@@ -37,6 +38,24 @@ const WRITABLE = new Set(['alignment', 'nodes', 'brands', 'sources', 'names', 't
 
 /** Cap on a posted body, so a runaway request cannot exhaust memory. */
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
+
+/**
+ * A mistake the caller made — a bad slug, an unknown node, an unwritable name.
+ *
+ * Anything thrown as one of these answers 400; anything else reaching the
+ * handler's catch answers 500, because a disk failure or a crashed pipeline is
+ * not the client's fault and saying so makes the failure diagnosable.
+ */
+class ClientError extends Error {
+  constructor(message, status = 400) {
+    super(message);
+    this.status = status;
+  }
+}
+
+function fail(message, status) {
+  throw new ClientError(message, status);
+}
 
 export function devApi() {
   return {
@@ -93,9 +112,10 @@ export function devApi() {
           return json(res, { error: 'not found' }, 404);
         } catch (err) {
           // No request may crash the studio. A malformed slug or a missing file
-          // is a 400, not a dead server.
+          // is a client mistake (400); anything else is this machine failing
+          // and deserves its real status.
           if (res.headersSent) return res.end();
-          return json(res, { error: err.message }, 400);
+          return json(res, { error: err.message }, err instanceof ClientError ? err.status : 500);
         }
       });
     },
@@ -140,7 +160,7 @@ async function createTour({ slug, title, rawDir }) {
   assertSlug(slug);
 
   const dir = path.join(TOURS_DIR, slug);
-  if (await exists(path.join(dir, 'tour.json'))) throw new Error(`Tour "${slug}" already exists`);
+  if (await exists(path.join(dir, 'tour.json'))) fail(`Tour "${slug}" already exists`, 409);
 
   await mkdir(dir, { recursive: true });
 
@@ -171,10 +191,11 @@ async function createTour({ slug, title, rawDir }) {
 /** What is done and what is not, per node, read fresh from disk every time. */
 async function readState(slug) {
   const paths = await tourPaths(slug);
-  const [alignment, tour, sourcesFile, roster] = await Promise.all([
+  const [alignment, tour, sourcesFile, linksFile, roster] = await Promise.all([
     readJson(paths.file('alignment')),
     readJson(paths.file('nodes')),
     readJson(paths.file('sources')),
+    readJson(paths.file('links')),
     loadRoster(paths),
   ]);
 
@@ -216,11 +237,30 @@ async function readState(slug) {
     }),
   );
 
+  // Regenerating in memory and diffing against what is on disk catches the
+  // quiet failure mode: anchors or links edited after the last rebuild leave
+  // every derived arrow pointing wherever it pointed before. Cheap to compute,
+  // and the studio can then say "rebuild" instead of leaving drift to be found.
+  const stale = tour?.nodes
+    ? staleness(
+        tour,
+        generateNodes({
+          rosterData: roster,
+          links: linksFile ?? { edges: [] },
+          alignment,
+          previous: tour,
+          config: paths.config,
+        }),
+      )
+    : { stale: false, changedNodes: [] };
+
   return {
     slug: paths.slug,
     config: paths.config,
     rawDir: path.relative(ROOT, paths.raw),
     hasFloorplan: await exists(paths.floorplan),
+    graphStale: stale.stale,
+    graphStaleNodes: stale.changedNodes.length,
     nodes,
     totals: {
       nodes: nodes.length,
@@ -318,7 +358,7 @@ async function assign(slug, { node, file }) {
   } else {
     const name = path.basename(String(file));
     if (!(await statOrNull(path.join(paths.raw, name)))) {
-      throw new Error(`"${name}" is not in the raw folder`);
+      fail(`"${name}" is not in the raw folder`);
     }
     // One photo per node: clear any other node holding this file, or the same
     // panorama would silently appear in two places.
@@ -381,7 +421,7 @@ async function removeNode(slug, { node }) {
   const id = requireNode(node);
   const names = await readJson(paths.file('names'));
 
-  if (Object.keys(names?.nodes ?? {}).length <= 1) throw new Error('cannot remove the last node');
+  if (Object.keys(names?.nodes ?? {}).length <= 1) fail('cannot remove the last node');
   delete names.nodes[id];
   await writeNames(paths.file('names'), names);
 
@@ -428,7 +468,7 @@ async function removeNode(slug, { node }) {
  */
 async function addNodeAt(slug, { x, y, name, type }) {
   if (!Number.isFinite(Number(x)) || !Number.isFinite(Number(y))) {
-    throw new Error('x and y are required');
+    fail('x and y are required');
   }
 
   const created = await addNode(slug, { name, type });
@@ -437,7 +477,7 @@ async function addNodeAt(slug, { x, y, name, type }) {
 
   nodes.nodes ??= {};
   nodes.nodes[created.node] = {
-    ...(nodes.nodes[created.node] ?? {}),
+    ...nodes.nodes[created.node],
     id: created.node,
     map: { x: Math.round(Number(x)), y: Math.round(Number(y)) },
     links: nodes.nodes[created.node]?.links ?? [],
@@ -480,7 +520,7 @@ async function uploadFloorplan(slug, req, name = '') {
   const paths = await tourPaths(slug);
   const bytes = await rawBody(req, 64 * 1024 * 1024);
 
-  if (!bytes.length) throw new Error('no file received');
+  if (!bytes.length) fail('no file received');
 
   const isPdf = bytes.subarray(0, 5).toString('latin1') === '%PDF-' || /\.pdf$/i.test(name);
 
@@ -521,9 +561,9 @@ async function uploadFloorplan(slug, req, name = '') {
  * ------------------------------------------------------------------ */
 
 async function save(slug, name, payload) {
-  if (!WRITABLE.has(name)) throw new Error(`"${name}" is not a writable file`);
+  if (!WRITABLE.has(name)) fail(`"${name}" is not a writable file`, 404);
   if (payload === null || typeof payload !== 'object') {
-    throw new Error('body must be a JSON object');
+    fail('body must be a JSON object');
   }
 
   const paths = await tourPaths(slug);
@@ -607,7 +647,7 @@ async function runPipeline(slug, { node }) {
   const roster = await loadRoster(paths);
   const n = Number(node);
 
-  if (!roster.has(n)) throw new Error(`"${node}" is not a node in this tour`);
+  if (!roster.has(n)) fail(`"${node}" is not a node in this tour`);
 
   return new Promise((resolve) => {
     execFile(
@@ -631,7 +671,7 @@ async function runPipeline(slug, { node }) {
 
 function requireNode(node) {
   const n = Number(node);
-  if (!Number.isInteger(n) || n < 1 || n > 999) throw new Error(`"${node}" is not a node number`);
+  if (!Number.isInteger(n) || n < 1 || n > 999) fail(`"${node}" is not a node number`);
   return nodeId(n);
 }
 

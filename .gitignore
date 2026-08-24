@@ -12,3 +12,6 @@ panos/
 
 .DS_Store
 *.log
+node_modules/
+.DS_Store
+._*

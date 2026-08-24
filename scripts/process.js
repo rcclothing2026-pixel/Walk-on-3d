@@ -3,9 +3,9 @@
  * Phase 1 — image pipeline.
  *
  * Reads the numbered source photos (equirectangular, out of Insta360 Studio) and
- * emits three renditions per node into public/tour/panos/:
+ * emits the renditions listed in RENDITION_ORDER (src/lib/paths.js) into
+ * panos/<slug>/, plus manifest.json with their byte sizes:
  *
- *   NN-full.jpg   8192×4096  q82   fetched only when the user zooms in
  *   NN-mid.jpg    4096×2048  q80   the default panorama
  *   NN-thumb.jpg  1024×512   q70   instant placeholder
  *

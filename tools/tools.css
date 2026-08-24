@@ -354,6 +354,20 @@ body {
   border-color: var(--danger);
 }
 
+/* An in-flow variant for banners that belong to the page — the studio's
+   stale-graph notice — rather than a modal over whatever is on screen. */
+.status--banner {
+  position: static;
+  transform: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  max-width: none;
+  margin-bottom: 18px;
+  text-align: start;
+}
+
 .status code {
   color: var(--warn);
   font-family: ui-monospace, "SF Mono", Menlo, monospace;

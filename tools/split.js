@@ -12,7 +12,9 @@
  * while "same node" is ticked.
  */
 
-import { tourLink, tourSlug } from './save.js';
+import { tourLink, tourSlug, API } from './save.js';
+import { escapeHtml } from './lib.js';
+import { CHANNEL } from './frame.js';
 
 const TOOLS = [
   { id: 'design', label: 'Initial design — anchor', href: '/tour/tools/design.html' },
@@ -21,8 +23,6 @@ const TOOLS = [
   { id: 'map', label: 'Map — place on plan', href: '/tour/tools/map.html' },
   { id: 'tour', label: 'Tour — walk it', href: '/tour/' },
 ];
-
-const CHANNEL = 'walk-on-3d';
 
 const el = {
   studio: document.getElementById('studio'),
@@ -182,7 +182,7 @@ function rememberNode() {
 
 async function loadTours() {
   try {
-    const response = await fetch('/tour/api/tours');
+    const response = await fetch(`${API}/tours`);
     const { tours = [] } = await response.json();
 
     el.tour.innerHTML = tours
@@ -233,11 +233,4 @@ function wireDivider() {
 
 function pick(value, fallback) {
   return TOOLS.some((t) => t.id === value) ? value : fallback;
-}
-
-function escapeHtml(value) {
-  return String(value).replace(
-    /[&<>"]/g,
-    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c],
-  );
 }

@@ -9,7 +9,8 @@
  * usable when opened without the dev server — they just cannot write.
  */
 
-const API = '/tour/api';
+/** Where the studio's development API lives. */
+export const API = '/tour/api';
 
 /**
  * The tour these tools are editing, read from the URL on every call.
@@ -54,6 +55,26 @@ export async function saveData(file, payload) {
     return { ok: true, saved: result.saved };
   } catch (err) {
     return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * POSTs JSON to a tour-scoped API endpoint.
+ *
+ * The API's answers are all `{ ... }` or `{ error }`; a network failure — the
+ * dev server not running, most commonly — becomes `{ error }` too, so callers
+ * check one field instead of catching.
+ */
+export async function postTour(endpoint, payload) {
+  try {
+    const response = await fetch(withTour(endpoint), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return await response.json();
+  } catch (err) {
+    return { error: err.message };
   }
 }
 

@@ -61,7 +61,14 @@ function serveTours() {
     apply: 'serve',
     configureServer(server) {
       server.middlewares.use('/tour/t', (req, res, next) => {
-        const url = decodeURIComponent((req.url ?? '').split('?')[0]);
+        // A malformed escape (%zz) throws; a bad query string is not worth a
+        // dead request, so it falls through to whatever handles it next.
+        let url;
+        try {
+          url = decodeURIComponent((req.url ?? '').split('?')[0]);
+        } catch {
+          return next();
+        }
         const [, slug, ...rest] = url.split('/');
         const tail = rest.join('/');
 

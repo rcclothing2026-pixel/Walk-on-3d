@@ -15,7 +15,8 @@
  * exactly as it did before.
  */
 
-const CHANNEL = 'walk-on-3d';
+/** The postMessage channel every pane and the split page speak on. */
+export const CHANNEL = 'walk-on-3d';
 
 /** Whether this page is a pane of the split view rather than the whole tab. */
 export function isFramed() {

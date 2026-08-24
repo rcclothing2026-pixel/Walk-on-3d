@@ -25,7 +25,7 @@ import '@photo-sphere-viewer/core/index.css';
 import { MarkersPlugin } from '@photo-sphere-viewer/markers-plugin';
 import '@photo-sphere-viewer/markers-plugin/index.css';
 
-import { floorplanUrl, dataUrl, panoUrl } from '../src/lib/paths.js';
+import { floorplanUrl, dataUrl, panoUrl, nodeId as pad } from '../src/lib/paths.js';
 import { loadTourData } from '../src/lib/tour-data.js';
 import {
   arrowYaw,
@@ -34,7 +34,8 @@ import {
   planNorthFromSighting,
   rawAngle,
 } from '../src/lib/geometry.js';
-import { downloadJson, saveData, withTour } from './save.js';
+import { downloadJson, saveData, postTour, withTour } from './save.js';
+import { escapeHtml, hideStatus, nodeOptions, showStatus, toast } from './lib.js';
 import { mountNav } from './nav.js';
 import { announceNode, connectFrame } from './frame.js';
 
@@ -183,8 +184,8 @@ async function loadNodes() {
     if (!response.ok) throw new Error(String(response.status));
     return await response.json();
   } catch {
-    showStatus(
-      '<strong>No node graph yet.</strong><br /><br />' +
+    showStatus(el.status,
+        '<strong>No node graph yet.</strong><br /><br />' +
         'This tool works from the plan, so it needs the nodes placed and linked ' +
         'first. Do that in the map tool (&#9776; &rarr; Map), press ' +
         '<strong>Rebuild</strong> there, then come back.',
@@ -226,8 +227,8 @@ function loadPlan() {
   return new Promise((resolve) => {
     el.plan.addEventListener('load', () => { fitPlan(); resolve(); }, { once: true });
     el.plan.addEventListener('error', () => {
-      showStatus(
-        '<strong>No floor plan.</strong><br /><br />' +
+      showStatus(el.status,
+          '<strong>No floor plan.</strong><br /><br />' +
           'Every angle here is measured off the plan, so there is nothing to do ' +
           'without one. Upload it in the map tool (&#9776; &rarr; Map).',
         'error',
@@ -288,7 +289,7 @@ async function openNode(node) {
       });
       viewer.addEventListener('panorama-loaded', () => {
         loadingPanorama = false;
-        hideStatus();
+        hideStatus(el.status);
         setEnabled(true);
         syncArrows();
       });
@@ -299,7 +300,7 @@ async function openNode(node) {
         showLoader: true,
       });
       loadingPanorama = false;
-      hideStatus();
+      hideStatus(el.status);
       setEnabled(true);
     }
   } catch {
@@ -401,8 +402,8 @@ function setEnabled(enabled) {
 
 function showMissingPanorama(node) {
   setEnabled(false);
-  showStatus(
-    `<strong>Node ${pad(node)} has no panorama yet.</strong><br /><br />` +
+  showStatus(el.status,
+      `<strong>Node ${pad(node)} has no panorama yet.</strong><br /><br />` +
       'Assign it a photo in the studio, then press <strong>Rebuild this photo</strong> ' +
       'in the &#9776; menu.',
     'error',
@@ -508,8 +509,8 @@ function settleHandedness() {
   syncArrows();
 
   if (verdict.mirrored) {
-    showStatus(
-      '<strong>This measured as mirrored.</strong><br /><br />' +
+    showStatus(el.status,
+        '<strong>This measured as mirrored.</strong><br /><br />' +
         `Two sightings ${verdict.separation}° apart, disagreeing by ${verdict.residual}°.<br /><br />` +
         'Mirrored panoramas are rare — nearly every 360 camera writes the usual ' +
         'way round. It is far more likely that one of these nodes is in the wrong ' +
@@ -522,8 +523,8 @@ function settleHandedness() {
   }
 
   if (verdict.residual > MAX_RESIDUAL) {
-    showStatus(
-      `<strong>The two sightings disagree by ${verdict.residual}°.</strong><br /><br />` +
+    showStatus(el.status,
+        `<strong>The two sightings disagree by ${verdict.residual}°.</strong><br /><br />` +
         'One of them is on the wrong doorway, or one of these nodes is in the wrong ' +
         'place on the plan. Anchoring on this will put every arrow at this node out ' +
         `by about that much.<br /><br />Sight ${pad(a.target)} and ${pad(b.target)} ` +
@@ -756,7 +757,7 @@ async function addNodeHere(point) {
   // memory, so anything unsaved goes out first rather than being lost.
   if (!(await persist({ quiet: true }))) return;
 
-  const result = await post('/add-node-at', { x: Math.round(point.x), y: Math.round(point.y) });
+  const result = await postTour('/add-node-at', { x: Math.round(point.x), y: Math.round(point.y) });
   if (result.error) {
     toast(result.error, 'error');
     return;
@@ -916,18 +917,18 @@ async function assignPhoto(file) {
   el.libraryStrip.querySelectorAll('.chip').forEach((c) => c.classList.add('is-busy'));
   toast(`Assigning ${file}…`);
 
-  const assigned = await post('/assign', { node, file });
+  const assigned = await postTour('/assign', { node, file });
   if (assigned.error) {
     toast(assigned.error, 'error');
     return;
   }
 
   toast('Building renditions…');
-  const built = await post('/process', { node });
+  const built = await postTour('/process', { node });
 
   if (built.ok === false || built.error) {
-    showStatus(
-      `<strong>Could not build node ${pad(node)}.</strong><br /><br /><code>${escapeHtml(
+    showStatus(el.status,
+        `<strong>Could not build node ${pad(node)}.</strong><br /><br /><code>${escapeHtml(
         built.error ?? built.output ?? '',
       )}</code>`,
       'error',
@@ -936,8 +937,8 @@ async function assignPhoto(file) {
   }
 
   remember(`photo ${file} → ${pad(node)}`, async () => {
-    await post('/assign', { node, file: previous });
-    if (previous) await post('/process', { node });
+    await postTour('/assign', { node, file: previous });
+    if (previous) await postTour('/process', { node });
     if (current === node) await openNode(node);
   });
 
@@ -975,19 +976,6 @@ function syncUndo() {
   el.undo.title = history.length
     ? `Undo ${history[history.length - 1].label} (Cmd/Ctrl+Z)`
     : 'Nothing to undo';
-}
-
-async function post(endpoint, payload) {
-  try {
-    const response = await fetch(withTour(endpoint), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    return await response.json();
-  } catch (err) {
-    return { error: err.message };
-  }
 }
 
 /* ------------------------------------------------------------------ *
@@ -1170,10 +1158,7 @@ function syncHint() {
 }
 
 function buildNodeOptions() {
-  el.node.innerHTML = NODES.map((n) => {
-    const { name } = tourData.info(n);
-    return `<option value="${n}">${pad(n)} — ${escapeHtml(name)}</option>`;
-  }).join('');
+  el.node.innerHTML = nodeOptions(NODES, (n) => tourData.info(n));
 }
 
 function buildTargetOptions() {
@@ -1211,7 +1196,7 @@ function wire() {
     mirrored = null;
     sightings = [];
     el.calibration.hidden = true;
-    hideStatus();
+    hideStatus(el.status);
     drawPlan();
     syncChrome();
     toast('Handedness cleared — sight two doorways again');
@@ -1319,32 +1304,3 @@ function round(value) {
   return Math.round(value * 10) / 10;
 }
 
-function pad(n) {
-  return String(n).padStart(2, '0');
-}
-
-function escapeHtml(value) {
-  return String(value).replace(
-    /[&<>"]/g,
-    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c],
-  );
-}
-
-function showStatus(html, kind = 'info') {
-  el.status.innerHTML = html;
-  el.status.dataset.kind = kind;
-  el.status.hidden = false;
-}
-
-function hideStatus() {
-  el.status.hidden = true;
-}
-
-function toast(message, kind = 'ok') {
-  const node = document.createElement('div');
-  node.className = 'toast';
-  node.dataset.kind = kind;
-  node.textContent = message;
-  document.body.append(node);
-  setTimeout(() => node.remove(), 2200);
-}

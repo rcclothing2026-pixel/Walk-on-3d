@@ -26,9 +26,18 @@ import { MarkersPlugin } from '@photo-sphere-viewer/markers-plugin';
 import '@photo-sphere-viewer/core/index.css';
 import '@photo-sphere-viewer/markers-plugin/index.css';
 
-import { panoUrl, dataUrl } from '../src/lib/paths.js';
+import { panoUrl, dataUrl, nodeId as pad } from '../src/lib/paths.js';
 import { loadTourData } from '../src/lib/tour-data.js';
 import { downloadJson, saveData } from './save.js';
+import {
+  escapeHtml,
+  hideStatus,
+  initialNode,
+  nodeOptions,
+  showStatus,
+  toast,
+  wireUnloadGuard,
+} from './lib.js';
 import { mountNav } from './nav.js';
 import { announceNode, connectFrame } from './frame.js';
 
@@ -70,6 +79,15 @@ let viewer = null;
 let markers = null;
 let placementEnabled = true;
 
+/**
+ * The arrows file as it was loaded from disk, serialised.
+ *
+ * The unload guard compares this against the current state, so a session that
+ * opened the tool and left again — even one where every arrow in the tour has
+ * long since been picked — is not nagged about work it never touched.
+ */
+let savedToDisk = null;
+
 start();
 
 async function start() {
@@ -80,11 +98,12 @@ async function start() {
   tour = await loadTour();
   if (!tour) return;
 
-  current = initialNode();
+  current = initialNode(NODES);
   buildNodeOptions();
   wireControls();
   wireKeyboard();
-  wireUnloadGuard();
+  savedToDisk = anglesSnapshot();
+  wireUnloadGuard(() => anglesSnapshot() !== savedToDisk);
   await openNode(current);
 
   // Last: a pane must know its roster before the split view can move it.
@@ -98,6 +117,7 @@ async function loadTour() {
     return await response.json();
   } catch {
     showStatus(
+      el.status,
       '<strong>No node graph yet.</strong><br /><br />' +
         'Arrows are derived from the links between nodes, and this tour has ' +
         'none yet. Draw them in the map tool (&#9776; &rarr; Map), press ' +
@@ -141,7 +161,7 @@ async function openNode(node) {
       // they are drawn on every panorama-loaded rather than only after the
       // constructor returns.
       viewer.addEventListener('panorama-loaded', () => {
-        hideStatus();
+        hideStatus(el.status);
         setPlacementEnabled(true);
         syncMarkers();
       });
@@ -153,7 +173,7 @@ async function openNode(node) {
         showLoader: true,
       });
     }
-    hideStatus();
+    hideStatus(el.status);
     setPlacementEnabled(true);
   } catch (err) {
     showMissingPanorama(node, err);
@@ -179,6 +199,7 @@ function setPlacementEnabled(enabled) {
 function showMissingPanorama(node, err) {
   setPlacementEnabled(false);
   showStatus(
+    el.status,
     `<strong>Node ${pad(node)} has no panorama yet.</strong><br />` +
       `Expected <code>${panoUrl(node, RENDITION)}</code><br /><br />` +
       'Assign it a photo in the studio, then press ' +
@@ -366,13 +387,9 @@ function wireKeyboard() {
   });
 }
 
-function wireUnloadGuard() {
-  window.addEventListener('beforeunload', (event) => {
-    const picked = Object.values(tour.nodes).flatMap((n) => n.links).filter(isPicked);
-    if (!picked.length) return;
-    event.preventDefault();
-    event.returnValue = '';
-  });
+/** Serialises every node's arrows, for unload-guard comparison. */
+function anglesSnapshot() {
+  return JSON.stringify(Object.values(tour.nodes).map((n) => n.links));
 }
 
 function setAngle(which, value) {
@@ -470,6 +487,7 @@ async function downloadTour() {
   const result = await saveData('nodes', tour);
 
   if (result.ok) {
+    savedToDisk = anglesSnapshot();
     toast(`Saved to ${result.saved}`);
     return;
   }
@@ -495,15 +513,7 @@ function pitchOk(pitch) {
 }
 
 function buildNodeOptions() {
-  el.node.innerHTML = NODES.map((n) => {
-    const { name } = tourData.info(n);
-    return `<option value="${n}">${pad(n)} — ${escapeHtml(name)}</option>`;
-  }).join('');
-}
-
-function initialNode() {
-  const requested = Number(new URLSearchParams(location.search).get('node'));
-  return NODES.includes(requested) ? requested : NODES[0];
+  el.node.innerHTML = nodeOptions(NODES, (n) => tourData.info(n));
 }
 
 function round(value) {
@@ -516,34 +526,4 @@ function norm360(value) {
 
 function rad2deg(value) {
   return (value * 180) / Math.PI;
-}
-
-function pad(n) {
-  return String(n).padStart(2, '0');
-}
-
-function escapeHtml(value) {
-  return String(value).replace(
-    /[&<>"]/g,
-    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c],
-  );
-}
-
-function showStatus(html, kind = 'info') {
-  el.status.innerHTML = html;
-  el.status.dataset.kind = kind;
-  el.status.hidden = false;
-}
-
-function hideStatus() {
-  el.status.hidden = true;
-}
-
-function toast(message, kind = 'ok') {
-  const node = document.createElement('div');
-  node.className = 'toast';
-  node.dataset.kind = kind;
-  node.textContent = message;
-  document.body.append(node);
-  setTimeout(() => node.remove(), 2000);
 }

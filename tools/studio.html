@@ -28,6 +28,15 @@
     </header>
 
     <main class="studio__body">
+      <section id="stale" class="status status--banner" data-kind="warn" role="status" hidden>
+        <span>
+          <strong>The graph is out of date.</strong> Links, alignment or names
+          have changed since the last rebuild, so some arrows no longer match
+          the plan.
+        </span>
+        <button id="stale-rebuild" class="btn">Rebuild the graph</button>
+      </section>
+
       <section class="cards" id="cards"></section>
 
       <section class="tray" id="tray" hidden>
@@ -66,7 +75,7 @@
       <pre id="log-body"></pre>
     </div>
 
-    <div id="status" class="status" hidden></div>
+    <div id="status" class="status" role="status" hidden></div>
 
     <script type="module" src="./studio.js"></script>
   </body>

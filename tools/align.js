@@ -25,9 +25,17 @@
 import { Viewer } from '@photo-sphere-viewer/core';
 import '@photo-sphere-viewer/core/index.css';
 
-import { panoUrl, dataUrl } from '../src/lib/paths.js';
+import { panoUrl, dataUrl, nodeId as pad } from '../src/lib/paths.js';
 import { loadTourData } from '../src/lib/tour-data.js';
 import { downloadJson, saveData } from './save.js';
+import {
+  hideStatus,
+  initialNode,
+  nodeOptions,
+  showStatus,
+  toast,
+  wireUnloadGuard,
+} from './lib.js';
 import { mountNav } from './nav.js';
 import { announceNode, connectFrame } from './frame.js';
 
@@ -76,6 +84,15 @@ let current = 1;
 const anchors = new Map();
 let pan = 0;
 let dirty = false;
+
+/**
+ * The alignment file as it stands on disk, serialised.
+ *
+ * The unload guard compares this against what is in memory: equal means every
+ * value was loaded, not edited, and closing the page loses nothing. A session
+ * that only ever loaded existing work never sees the warning.
+ */
+let savedToDisk = null;
 let viewer = null;
 
 start();
@@ -91,7 +108,10 @@ async function start() {
   await loadExistingAlignment();
   wireControls();
   wireKeyboard();
-  wireUnloadGuard();
+  savedToDisk = snapshot();
+  // Warns only when memory has drifted from the file on disk — edits, clears,
+  // or values recorded this session that persist() has not written yet.
+  wireUnloadGuard(() => dirty || snapshot() !== savedToDisk);
   await openNode(current);
 
   // Last: a pane must know its roster before the split view can move it.
@@ -141,7 +161,7 @@ async function openNode(node) {
         showMissingPanorama(current, event.error),
       );
       viewer.addEventListener('panorama-loaded', () => {
-        hideStatus();
+        hideStatus(el.status);
         setControlsEnabled(true);
       });
     } else {
@@ -151,7 +171,7 @@ async function openNode(node) {
         showLoader: true,
       });
     }
-    hideStatus();
+    hideStatus(el.status);
     setControlsEnabled(true);
   } catch (err) {
     showMissingPanorama(node, err);
@@ -182,6 +202,7 @@ function showMissingPanorama(node, err) {
   const file = panoUrl(node, RENDITION);
   setControlsEnabled(false);
   showStatus(
+    el.status,
     `<strong>Node ${pad(node)} has no panorama yet.</strong><br />` +
       `Expected <code>${file}</code><br /><br />` +
       'Assign it a photo in the studio, then press ' +
@@ -247,10 +268,7 @@ function polar(angleDeg, radius) {
  * ------------------------------------------------------------------ */
 
 function buildNodeOptions() {
-  el.node.innerHTML = NODES.map((n) => {
-    const { name } = tourData.info(n);
-    return `<option value="${n}">${pad(n)} — ${escapeHtml(name)}</option>`;
-  }).join('');
+  el.node.innerHTML = nodeOptions(NODES, (n) => tourData.info(n));
 }
 
 function syncNodeChrome() {
@@ -350,15 +368,6 @@ function wireKeyboard() {
   });
 }
 
-/** No localStorage by project rule, so unsaved work is genuinely losable. */
-function wireUnloadGuard() {
-  window.addEventListener('beforeunload', (event) => {
-    if (!dirty && !saved.size) return;
-    event.preventDefault();
-    event.returnValue = '';
-  });
-}
-
 function setPan(value) {
   if (!Number.isFinite(value) || el.pan.disabled) return;
   pan = clampPan(round(value));
@@ -454,6 +463,11 @@ function buildObject() {
   return out;
 }
 
+/** Serialises what is in memory right now, for drift comparison. */
+function snapshot() {
+  return JSON.stringify(buildObject());
+}
+
 async function copyJson() {
   const json = `${JSON.stringify(buildObject(), null, 2)}\n`;
   try {
@@ -472,6 +486,7 @@ async function persist() {
 
   if (result.ok) {
     dirty = false;
+    savedToDisk = snapshot();
     syncProgress();
     toast(`Saved to ${result.saved}`);
     return;
@@ -506,11 +521,6 @@ async function loadExistingAlignment() {
  * Helpers
  * ------------------------------------------------------------------ */
 
-function initialNode() {
-  const requested = Number(new URLSearchParams(location.search).get('node'));
-  return NODES.includes(requested) ? requested : NODES[0];
-}
-
 /** Keeps the slider's half-degree resolution and avoids float noise. */
 function round(value) {
   return Math.round(value * 2) / 2;
@@ -536,31 +546,4 @@ function deg2rad(value) {
 
 function rad2deg(value) {
   return (value * 180) / Math.PI;
-}
-
-function pad(n) {
-  return String(n).padStart(2, '0');
-}
-
-function escapeHtml(value) {
-  return value.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-}
-
-function showStatus(html, kind = 'info') {
-  el.status.innerHTML = html;
-  el.status.dataset.kind = kind;
-  el.status.hidden = false;
-}
-
-function hideStatus() {
-  el.status.hidden = true;
-}
-
-function toast(message, kind = 'ok') {
-  const node = document.createElement('div');
-  node.className = 'toast';
-  node.dataset.kind = kind;
-  node.textContent = message;
-  document.body.append(node);
-  setTimeout(() => node.remove(), 2000);
 }

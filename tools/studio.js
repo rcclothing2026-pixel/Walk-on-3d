@@ -13,15 +13,16 @@
  * part of the production build.
  */
 
-import { tourLink, tourSlug, withTour } from './save.js';
-
-const API = '/tour/api';
+import { API, postTour, tourLink, tourSlug, withTour } from './save.js';
+import { escapeHtml, hideStatus, showStatus } from './lib.js';
 
 const el = {
   tour: document.getElementById('tour'),
   newTour: document.getElementById('new-tour'),
   summary: document.getElementById('summary'),
   cards: document.getElementById('cards'),
+  stale: document.getElementById('stale'),
+  staleRebuild: document.getElementById('stale-rebuild'),
   rows: document.getElementById('rows'),
   refresh: document.getElementById('refresh'),
   addNode: document.getElementById('add-node'),
@@ -49,6 +50,7 @@ async function start() {
   el.refresh.addEventListener('click', refresh);
   el.addNode.addEventListener('click', addNode);
   el.newTour.addEventListener('click', createTour);
+  el.staleRebuild.addEventListener('click', rebuildGraph);
   el.tour.addEventListener('change', () => selectTour(el.tour.value));
   el.logClose.addEventListener('click', () => (el.log.hidden = true));
 
@@ -77,9 +79,10 @@ async function refresh() {
     state = await stateRes.json();
     photos = photosRes.ok ? await photosRes.json() : { photos: [], unassigned: 0 };
     render();
-    hideStatus();
+    hideStatus(el.status);
   } catch (err) {
     showStatus(
+      el.status,
       '<strong>The studio API is not responding.</strong><br /><br />' +
         'It only exists under <code>npm run dev</code>. If the dev server is ' +
         'running, check its console for an error.',
@@ -107,6 +110,7 @@ async function loadTours() {
   if (!tours.length) {
     el.tour.innerHTML = '';
     showStatus(
+      el.status,
       '<strong>No tours yet.</strong><br /><br />Press <strong>+ Tour</strong> to create one.',
     );
     return;
@@ -162,7 +166,7 @@ async function createTour() {
   );
   if (!wanted?.trim()) return;
 
-  const result = await post('/tours', { slug: wanted.trim(), title: title.trim() });
+  const result = await postTour('/tours', { slug: wanted.trim(), title: title.trim() });
   if (result.error) {
     openLog('Could not create that tour', result.error);
     return;
@@ -192,9 +196,30 @@ function render() {
     `${totals.linksPicked}/${totals.links} arrows · ` +
     `${totals.mapped}/${totals.nodes} on the map`;
 
+  // The graph was regenerated in memory by the API and diffed against what is
+  // on disk. When they disagree, arrows a visitor sees are not the ones the
+  // plan implies — so this says so, with the fix one click away.
+  el.stale.hidden = !state.graphStale;
+
   renderCards(totals);
   renderTray();
   renderRows();
+}
+
+/**
+ * Regenerates nodes.json from links, alignment and names.
+ *
+ * Picked angles and map points survive; only what geometry can now derive
+ * changes.
+ */
+async function rebuildGraph() {
+  openLog('Rebuilding the graph…', 'Deriving arrow angles from the floor plan.');
+  const result = await postTour('/rebuild', {});
+  openLog(
+    result.error ? 'Rebuild failed' : 'Graph rebuilt',
+    result.output || result.error || '',
+  );
+  await refresh();
 }
 
 /**
@@ -376,7 +401,7 @@ function wireRename(input) {
       return;
     }
 
-    const result = await post('/rename', { node: Number(input.dataset.rename), name });
+    const result = await postTour('/rename', { node: Number(input.dataset.rename), name });
     if (result.error) {
       input.value = original;
       openLog('Rename failed', result.error);
@@ -411,7 +436,7 @@ function wireDropTarget(cell) {
       event.dataTransfer.getData('text/plain') || event.dataTransfer.files?.[0]?.name;
     if (!dropped) return;
 
-    const result = await post('/assign', { node, file: dropped });
+    const result = await postTour('/assign', { node, file: dropped });
     if (result.error) {
       openLog('Could not assign that photo', result.error);
       return;
@@ -459,10 +484,16 @@ async function processNode(node) {
  *
  * Sequential on purpose: the pipeline already runs its own decodes
  * concurrently, and firing 40 of them at once would just thrash memory.
+ *
+ * A failed node is reported, not swallowed — "Built 37 of 40, 3 failed"
+ * followed by the reasons is the difference between trusting this button and
+ * discovering missing renditions in the viewer.
  */
 async function processAll() {
   const pending = state.nodes.filter((n) => n.raw && !n.processed);
   if (!pending.length) return;
+
+  const failures = [];
 
   for (const [index, node] of pending.entries()) {
     openLog(
@@ -470,20 +501,33 @@ async function processAll() {
       `Node ${node.id} — ${node.name}\n\nThis runs one node at a time; leave the tab open.`,
     );
 
-    await fetch(withTour('/process'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ node: node.node }),
-    }).catch(() => null);
+    try {
+      const response = await fetch(withTour('/process'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ node: node.node }),
+      });
+      const result = await response.json();
+      if (!response.ok || result.ok === false || result.error) {
+        failures.push(`Node ${node.id}: ${result.error ?? result.output ?? response.status}`);
+      }
+    } catch (err) {
+      failures.push(`Node ${node.id}: ${err.message}`);
+    }
   }
 
-  openLog('Done', `Built ${pending.length} node(s).`);
+  const built = pending.length - failures.length;
+  openLog(
+    failures.length ? 'Finished with failures' : 'Done',
+    `Built ${built} of ${pending.length} node(s).` +
+      (failures.length ? `\n\n${failures.join('\n\n')}` : ''),
+  );
   await refresh();
 }
 
 /** Appends a node to the roster. */
 async function addNode() {
-  const result = await post('/add-node', {});
+  const result = await postTour('/add-node', {});
   if (result.error) {
     openLog('Could not add a node', result.error);
     return;
@@ -513,26 +557,13 @@ async function removeNode(node) {
   const warning = done.length ? `\n\nThis also discards ${done.join(', ')}.` : '';
   if (!window.confirm(`Remove node ${entry?.id ?? node} — ${entry?.name ?? ''}?${warning}`)) return;
 
-  const result = await post('/remove-node', { node });
+  const result = await postTour('/remove-node', { node });
   if (result.error) {
     openLog('Could not remove that node', result.error);
     return;
   }
 
   await refresh();
-}
-
-async function post(endpoint, payload) {
-  try {
-    const response = await fetch(withTour(endpoint), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    return await response.json();
-  } catch (err) {
-    return { error: err.message };
-  }
 }
 
 /* ------------------------------------------------------------------ *
@@ -551,21 +582,4 @@ function openLog(title, text) {
   el.logTitle.textContent = title;
   el.logBody.textContent = text;
   el.log.hidden = false;
-}
-
-function escapeHtml(value) {
-  return String(value).replace(
-    /[&<>"]/g,
-    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c],
-  );
-}
-
-function showStatus(html, kind = 'info') {
-  el.status.innerHTML = html;
-  el.status.dataset.kind = kind;
-  el.status.hidden = false;
-}
-
-function hideStatus() {
-  el.status.hidden = true;
 }

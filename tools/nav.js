@@ -15,7 +15,8 @@
  * navigation, not the load.
  */
 
-import { tourLink, tourSlug, withTour } from './save.js';
+import { tourLink, tourSlug, withTour, API } from './save.js';
+import { escapeHtml } from './lib.js';
 
 const TOOLS = [
   {
@@ -118,7 +119,7 @@ function render(drawer, { tool, node }) {
 /** The venue switcher. Fetched on open so a tour added meanwhile shows up. */
 async function loadTours(drawer) {
   try {
-    const response = await fetch('/tour/api/tours');
+    const response = await fetch(`${API}/tours`);
     const { tours = [] } = await response.json();
 
     drawer.tours.innerHTML = tours
@@ -211,11 +212,4 @@ function build() {
     studio: pick('[data-role="studio"]'),
     message: pick('.drawer__message'),
   };
-}
-
-function escapeHtml(value) {
-  return String(value).replace(
-    /[&<>"]/g,
-    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c],
-  );
 }
