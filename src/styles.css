@@ -65,6 +65,16 @@
 }
 
 /*
+ * Keyboard focus has to be visible everywhere — the viewer's own controls, the
+ * navbar buttons and the panel. Pointer users see none of this; the UA default
+ * was suppressed by various resets across plugins, so it is restated here.
+ */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/*
  * The UA rule for [hidden] is display:none, but any author rule that sets
  * `display` beats it — which silently leaves "hidden" overlays on screen,
  * swallowing every click. Several elements here are toggled by the `hidden`

@@ -95,7 +95,14 @@ export class BrandPanel {
       link.removeAttribute('href');
     }
 
+    // The sphere behind the dialog is decoration while the panel is open:
+    // taking it out of the tab order stops a Tab press from vanishing into it.
+    // Focus is remembered first — inert would drop it to <body>.
     this.#lastFocused = document.activeElement;
+    for (const sibling of document.body.children) {
+      if (sibling !== this.#root && !sibling.contains(this.#root)) sibling.inert = true;
+    }
+
     this.#root.hidden = false;
     this.#open = true;
 
@@ -109,6 +116,10 @@ export class BrandPanel {
 
     this.#open = false;
     this.#root.classList.remove('is-open');
+
+    for (const sibling of document.body.children) {
+      if (sibling !== this.#root && !sibling.contains(this.#root)) sibling.inert = false;
+    }
 
     const finish = () => {
       if (!this.#open) this.#root.hidden = true;

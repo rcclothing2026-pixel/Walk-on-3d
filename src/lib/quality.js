@@ -19,9 +19,27 @@
  */
 
 import { RENDITIONS, RENDITION_ORDER, panoUrl } from './paths.js';
+import { PANO_BASE_URL } from '../config.js';
 
 /** Below this downlink estimate (Mbps) we never fetch `full`. */
 export const SLOW_CONNECTION_MBPS = 2;
+
+/**
+ * True when this connection should not be handed extra work.
+ *
+ * navigator.connection is Chromium-only. Where it is missing we assume a
+ * decent connection rather than crippling the tour on Safari and Firefox —
+ * every caller here already gates on something else as well.
+ */
+export function isSlowConnection() {
+  const connection = navigator.connection;
+  if (!connection) return false;
+
+  if (connection.saveData) return true;
+  if (['slow-2g', '2g'].includes(connection.effectiveType)) return true;
+
+  return Number.isFinite(connection.downlink) && connection.downlink < SLOW_CONNECTION_MBPS;
+}
 
 /**
  * Zoom level (0–100, as Photo Sphere Viewer reports it) past which `full` is
@@ -77,18 +95,11 @@ export class QualityManager {
   /**
    * True when this connection should never fetch `full`.
    *
-   * navigator.connection is Chromium-only. Where it is missing we assume a
-   * decent connection rather than crippling the tour on Safari and Firefox —
-   * the zoom threshold still gates the fetch either way.
+   * Kept as a method so policy reads as part of the class; the check itself
+   * is the exported function, so the viewer can ask before any viewer exists.
    */
   isSlowConnection() {
-    const connection = navigator.connection;
-    if (!connection) return false;
-
-    if (connection.saveData) return true;
-    if (['slow-2g', '2g'].includes(connection.effectiveType)) return true;
-
-    return Number.isFinite(connection.downlink) && connection.downlink < SLOW_CONNECTION_MBPS;
+    return isSlowConnection();
   }
 
   /** Whether `node` is already showing its full-resolution panorama. */
@@ -173,7 +184,7 @@ export class QualityManager {
 /** Loads panos/manifest.json if the pipeline has produced one. */
 export async function loadManifest() {
   try {
-    const response = await fetch(panoUrl(1, 'mid').replace(/\/[^/]+$/, '/manifest.json'));
+    const response = await fetch(`${PANO_BASE_URL}manifest.json`);
     return response.ok ? await response.json() : null;
   } catch {
     return null;

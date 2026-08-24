@@ -30,9 +30,10 @@
       </div>
     </div>
 
-    <p id="caption" class="caption"></p>
+    <!-- aria-live so a screen reader announces the node name on every move. -->
+    <p id="caption" class="caption" aria-live="polite" role="status"></p>
 
-    <div id="error" class="error" hidden>
+    <div id="error" class="error" role="alert" hidden>
       <p data-message></p>
       <p class="error__hint">صفحه را دوباره بارگذاری کنید.</p>
     </div>

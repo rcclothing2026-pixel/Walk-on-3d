@@ -8,8 +8,9 @@
  *
  *   - Virtual tour in `3d` mode, so arrows are rendered into the scene rather
  *     than shown as a 2D gallery.
- *   - Neighbours of the current node are preloaded. This is the single biggest
- *     factor in whether moving feels instant, so it is not optional.
+ *   - Neighbours of the current node are preloaded — the single biggest factor
+ *     in whether moving feels instant, and the first thing to go when the
+ *     connection is too slow to afford it (see buildPlugins).
  *   - A thumbnail is shown blurred behind the loader; the sphere is never blank.
  *   - The URL tracks the current node via replaceState, and ?node=NN opens there.
  */
@@ -26,9 +27,9 @@ import '@photo-sphere-viewer/map-plugin/index.css';
 
 import './styles.css';
 
-import { assetUrl, floorplanUrl, panoUrl } from './lib/paths.js';
+import { assetUrl, floorplanUrl, panoUrl, RENDITION_ORDER } from './lib/paths.js';
 import { loadTourData } from './lib/tour-data.js';
-import { QualityManager, loadManifest } from './lib/quality.js';
+import { QualityManager, loadManifest, isSlowConnection } from './lib/quality.js';
 import { BrandPanel } from './lib/panel.js';
 import { Gyroscope, registerControls } from './lib/controls.js';
 
@@ -48,6 +49,15 @@ let mapFromNode = 1;
  */
 let mapUsable = false;
 
+/**
+ * Whether the visitor collapsed the mini-map themselves.
+ *
+ * The tour opens the map when a node first sits somewhere it helps, but once
+ * somebody has put it away, reopening it on every step would overrule a
+ * decision they already made. Their choice stands until they expand it again.
+ */
+let visitorCollapsedMap = false;
+
 /** The node the viewer is on, so an error message can name it. */
 let currentNode = null;
 
@@ -65,7 +75,13 @@ const el = {
 boot().catch(showFatal);
 
 async function boot() {
-  const [data, manifest] = await Promise.all([loadTourData(), loadManifest()]);
+  // The manifest only feeds the `full` upgrade decision. While that rendition
+  // is not built (see RENDITION_ORDER in paths.js) there is nothing to look
+  // up, so the request is skipped rather than made for nobody.
+  const [data, manifest] = await Promise.all([
+    loadTourData(),
+    RENDITION_ORDER.includes('full') ? loadManifest() : Promise.resolve(null),
+  ]);
 
   if (!data.nodes) {
     throw new Error(
@@ -121,6 +137,12 @@ async function boot() {
   const panel = new BrandPanel();
   const quality = new QualityManager({ viewer, manifest });
 
+  // A visitor who puts the mini-map away has answered the question; every
+  // later node respects that answer instead of reopening it.
+  mapPlugin?.addEventListener('view-changed', ({ view }) => {
+    visitorCollapsedMap = view === 'closed';
+  });
+
   // Off by default: following the phone unannounced disorients people.
   const gyroscope = new Gyroscope(viewer, {
     onChange: (on) => document.body.classList.toggle('gyro-on', on),
@@ -162,13 +184,20 @@ async function boot() {
  * saves fetching the floor plan for nothing.
  */
 function buildPlugins() {
+  // Preloading every neighbour costs roughly one `mid` per link — several MB
+  // at a busy hub. On a connection the quality policy already distrusts, that
+  // spend works against the visitor: the next node is fetched on demand
+  // instead, and movement waits for one panorama rather than five.
+  const slow = isSlowConnection();
+  if (slow) console.info('[tour] Slow connection detected — neighbour preloading disabled.');
+
   const tourConfig = {
     positionMode: 'manual',
     renderMode: '3d',
     transitionOptions: reducedMotion
       ? { showLoader: true, speed: 0, fadeIn: false, rotation: false }
       : { showLoader: true, speed: '12rpm', fadeIn: true, rotation: true },
-    preload: true,
+    preload: !slow,
     // Valid keys are image / element / className / size / style — the
     // colour-ish names other PSV plugins use are silently ignored here.
     arrowStyle: {
@@ -338,9 +367,10 @@ function syncMapVisibility(mapPlugin, node) {
   }
 
   // show() alone is not enough: a map left collapsed comes back as a small
-  // button rather than the mini-map. open() clears that state.
+  // button rather than the mini-map. open() clears that state — but not when
+  // the visitor is the one who collapsed it.
   mapPlugin.show();
-  mapPlugin.open();
+  if (!visitorCollapsedMap) mapPlugin.open();
 }
 
 /* ------------------------------------------------------------------ *
