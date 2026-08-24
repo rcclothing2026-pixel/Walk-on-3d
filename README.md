@@ -496,6 +496,14 @@ demands an explicit `--tour=`: writing to a venue picked for you is not.
 Re-running **merges**: hand-picked arrow angles and map points survive, only the
 structure is rebuilt.
 
+**Staleness is detected, not assumed.** `--check` regenerates the graph in
+memory from the tour's current links, alignment and names, and compares it with
+what is on disk. When they disagree — anchors recorded after the last rebuild,
+links drawn since, names edited — the check says which nodes moved and exits
+non-zero, so `npm run build` refuses to ship a graph that no longer matches the
+work behind it. The studio shows the same verdict as a banner with a one-click
+rebuild; the comparison lives in `scripts/generate-graph.js`, shared by both.
+
 Validation splits findings deliberately. **Errors fail the build** — a one-way
 link, or a link to a node that does not exist. **Warnings are printed and left
 for a human** — an unreachable node, or a node with fewer links than expected.
@@ -860,3 +868,30 @@ Everything else checks out: 52 edges, all bidirectional, and every node except
   silently corrected.
 - No CSS framework — plain CSS with custom properties.
 - Vazirmatn is self-hosted as woff2; Google Fonts is not reliably reachable.
+
+## The panos repository
+
+`panos/` is gitignored here — rebuildable from `raw/`, measured in hundreds of
+megabytes. But the renditions still need versioning and somewhere to upload
+from, so they live in a second repository beside this one
+(`Walk-on-3d-panos`, one folder per venue plus the manifest).
+
+```bash
+npm run panos-sync -- --check            # what would change
+npm run panos-sync                       # copy it over
+npm run panos-sync -- --commit "hammam rebuild"   # copy, then commit there
+```
+
+The target is `../Walk-on-3d-panos`, or wherever `WALK_PANOS_REPO` points.
+Files are compared by size and mtime; macOS droppings (`.DS_Store`, `._*`) are
+skipped in both trees, and renditions whose node has been removed are reported
+for deletion on the far side.
+
+## Tests
+
+The pure cores are pinned by vitest (`npm test`): the geometry conventions
+measured against Photo Sphere Viewer, the graph validator's error/warning
+split, generation precedence (picked > derived > auto) and staleness
+detection, and the filename contract between pipeline and viewer. Lint is
+`npm run lint`. CI runs both plus `nodes --check` and a full build on every
+push.

@@ -9,10 +9,13 @@
     "floorplan": "node scripts/floorplan.js",
     "heading": "node scripts/heading.js",
     "nodes": "node scripts/build-nodes.js",
+    "panos-sync": "node scripts/panos-sync.js",
     "publish": "node scripts/publish.js",
     "dev": "vite",
     "build": "npm run nodes -- --check && vite build && node scripts/bundle.js",
-    "preview": "vite preview --outDir dist"
+    "preview": "vite preview --outDir dist",
+    "test": "vitest run",
+    "lint": "oxlint"
   },
   "dependencies": {
     "@photo-sphere-viewer/core": "^5.15.1",
@@ -22,7 +25,9 @@
     "three": "^0.185.1"
   },
   "devDependencies": {
+    "oxlint": "^1.79.0",
     "sharp": "^0.35.3",
-    "vite": "^7.1.7"
+    "vite": "^7.1.7",
+    "vitest": "^4.1.11"
   }
 }
