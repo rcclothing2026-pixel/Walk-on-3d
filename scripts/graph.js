@@ -100,6 +100,26 @@ export function validate(adj, roster, { start, deadEnds = [], expectedSingleLink
   return { errors, warnings };
 }
 
+/**
+ * Derives the adjacency a generated nodes map actually describes, via its
+ * links. This is the structure to validate — what the viewer will walk — not
+ * the edge list it was built from.
+ */
+export function adjacencyOf(nodes) {
+  const adj = new Map();
+
+  for (const [id, node] of Object.entries(nodes)) {
+    const from = Number(id);
+    if (!adj.has(from)) adj.set(from, []);
+    for (const link of node.links ?? []) {
+      const to = Number(link.node);
+      if (!adj.get(from).includes(to)) adj.get(from).push(to);
+    }
+  }
+
+  return adj;
+}
+
 /** Nodes not reachable from `start` by following links. */
 function unreachable(adj, roster, start) {
   const seen = new Set([start]);
